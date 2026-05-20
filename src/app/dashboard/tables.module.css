@@ -1,0 +1,156 @@
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.dataTable {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  table-layout: auto;
+}
+
+.dataTable th, .dataTable td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.dataTable th {
+  background-color: rgba(0, 0, 0, 0.025);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.dataTable th[style] {
+  display: table-cell !important;
+}
+
+.dataTable td {
+  color: var(--text-secondary);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dataTable tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+.dataTable tbody tr:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.01);
+}
+
+.dataTable tbody tr:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.dataTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.monoCell {
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--accent-primary);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.monoWrapCell {
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--accent-primary);
+  font-size: 0.82rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.numericCell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sharesCell {
+  width: 120px;
+}
+
+.actionCell {
+  width: 170px;
+  white-space: nowrap;
+}
+
+.actionCellNarrow {
+  width: 110px;
+  white-space: nowrap;
+}
+
+.headerWithFilter {
+  white-space: nowrap;
+}
+
+.actionsGroup {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.editIconAction {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 6px;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--warning);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.editIconAction:hover {
+  background: rgba(217, 119, 6, 0.2);
+}
+
+.actionLink {
+  color: var(--accent-hover);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: all var(--transition-fast);
+}
+
+.actionLink:hover {
+  text-decoration-color: var(--accent-hover);
+  text-underline-offset: 4px;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 3rem !important;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+@media (max-width: 1024px) {
+  .tableWrapper {
+    border-radius: var(--radius-md);
+  }
+
+  .dataTable {
+    min-width: 780px;
+  }
+
+  .dataTable th,
+  .dataTable td {
+    padding: 0.7rem 0.75rem;
+  }
+}
