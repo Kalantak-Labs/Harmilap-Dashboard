@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
 import type { Company } from "@/lib/types";
+import { securityTypeFromISIN } from "@/lib/isin";
 
 type EditState = Partial<Company> & {
   total_shares?: string | number | null;
@@ -89,6 +90,16 @@ export default function CompanyDetailPage() {
     }
   };
 
+  const startEditing = () => {
+    // If security_type is missing, auto-derive from ISIN
+    const detected = securityTypeFromISIN(company!.isin_code);
+    setForm({
+      ...company!,
+      ...(detected && !company!.security_type ? { security_type: detected } : {}),
+    });
+    setEditing(true);
+  };
+
   const cancelEdit = () => { setForm(company!); setEditing(false); };
 
   if (loading) return <div className="spinner-center"><span className="spinner spinner-lg" /></div>;
@@ -139,7 +150,7 @@ export default function CompanyDetailPage() {
           ) : (
             <>
               {can("editor") && (
-                <button className="btn btn-secondary" onClick={() => setEditing(true)}><Edit2 size={14} /> Edit</button>
+                <button className="btn btn-secondary" onClick={startEditing}><Edit2 size={14} /> Edit</button>
               )}
               {can("editor") && (
                 <button className="btn btn-danger" onClick={() => setShowDelete(true)}><Trash2 size={14} /> Delete</button>

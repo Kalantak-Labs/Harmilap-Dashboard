@@ -5,12 +5,14 @@ import { X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
+import { securityTypeFromISIN } from "@/lib/isin";
 
 interface Props { onClose: () => void; onCreated: () => void; }
 
 export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   const { push } = useToast();
   const [loading, setLoading] = useState(false);
+  const [secAutoFilled, setSecAutoFilled] = useState(false);
   const [form, setForm] = useState({
     isin_code: "", company_name: "", rta_code: "",
     email_ids: [] as string[], contact_numbers: [] as string[],
@@ -24,6 +26,22 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   });
 
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleIsinChange = (isin: string) => {
+    const detected = securityTypeFromISIN(isin);
+    setForm((f) => ({
+      ...f,
+      isin_code: isin,
+      // Auto-fill when field is empty or was previously auto-filled
+      ...(detected !== null && (secAutoFilled || !f.security_type) ? { security_type: detected } : {}),
+    }));
+    if (detected !== null) setSecAutoFilled(true);
+  };
+
+  const handleSecurityTypeChange = (v: string) => {
+    set("security_type", v);
+    setSecAutoFilled(false);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +77,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div className="grid-2">
               <div className="form-group">
                 <label className="form-label required">ISIN Code</label>
-                <input className="input" value={form.isin_code} onChange={(e) => set("isin_code", e.target.value)} placeholder="INE000000000" required />
+                <input className="input" value={form.isin_code} onChange={(e) => handleIsinChange(e.target.value)} placeholder="INE000000000" required />
               </div>
               <div className="form-group">
                 <label className="form-label">Company Name</label>
@@ -71,7 +89,17 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
               </div>
               <div className="form-group">
                 <label className="form-label">Security Type</label>
-                <input className="input" value={form.security_type} onChange={(e) => set("security_type", e.target.value)} placeholder="Equity / Preference…" />
+                <input
+                  className="input"
+                  value={form.security_type}
+                  onChange={(e) => handleSecurityTypeChange(e.target.value)}
+                  placeholder="Auto-filled from ISIN…"
+                />
+                {secAutoFilled && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+                    Auto-detected from ISIN — edit freely
+                  </div>
+                )}
               </div>
             </div>
 
