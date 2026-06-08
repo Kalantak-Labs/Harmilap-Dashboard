@@ -4,7 +4,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import TagInput from "@/components/ui/TagInput";
+import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
 
 interface Props { onClose: () => void; onCreated: () => void; }
 
@@ -79,11 +79,11 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Contact</div>
             <div className="form-group">
               <label className="form-label">Email IDs</label>
-              <TagInput values={form.email_ids} onChange={(v) => set("email_ids", v)} placeholder="Add email and press Enter" />
+              <ArrayFieldEditor values={form.email_ids} onChange={(v) => set("email_ids", v)} placeholder="email@example.com" inputType="email" />
             </div>
             <div className="form-group">
               <label className="form-label">Contact Numbers</label>
-              <TagInput values={form.contact_numbers} onChange={(v) => set("contact_numbers", v)} placeholder="Add number and press Enter" />
+              <ArrayFieldEditor values={form.contact_numbers} onChange={(v) => set("contact_numbers", v)} placeholder="+91 XXXXX XXXXX" inputType="tel" />
             </div>
             <div className="grid-2">
               <div className="form-group">

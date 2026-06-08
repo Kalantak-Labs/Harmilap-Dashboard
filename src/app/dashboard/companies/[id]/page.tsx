@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
 import ConfirmModal from "@/components/ui/ConfirmModal";
-import TagInput from "@/components/ui/TagInput";
+import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
 import type { Company } from "@/lib/types";
 
 type EditState = Partial<Company> & {
@@ -163,12 +163,16 @@ export default function CompanyDetailPage() {
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Contact</div>
           <Field label="Email IDs" value={editing
-            ? <TagInput values={(form.email_ids as string[]) ?? []} onChange={(v) => set("email_ids", v)} />
-            : company.email_ids?.length ? company.email_ids.join(", ") : null}
+            ? <ArrayFieldEditor values={(form.email_ids as string[]) ?? []} onChange={(v) => set("email_ids", v)} placeholder="email@example.com" inputType="email" />
+            : company.email_ids?.length
+              ? <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{company.email_ids.map((e, i) => <span key={i}>{e}</span>)}</div>
+              : null}
           />
           <Field label="Contact Numbers" value={editing
-            ? <TagInput values={(form.contact_numbers as string[]) ?? []} onChange={(v) => set("contact_numbers", v)} />
-            : company.contact_numbers?.length ? company.contact_numbers.join(", ") : null}
+            ? <ArrayFieldEditor values={(form.contact_numbers as string[]) ?? []} onChange={(v) => set("contact_numbers", v)} placeholder="+91 XXXXX XXXXX" inputType="tel" />
+            : company.contact_numbers?.length
+              ? <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{company.contact_numbers.map((n, i) => <span key={i}>{n}</span>)}</div>
+              : null}
           />
           <Field label="Authorized Person" value={editing ? inp("authorized_person_name") : company.authorized_person_name} />
           <Field label="Designation" value={editing ? inp("authorized_person_designation") : company.authorized_person_designation} />
