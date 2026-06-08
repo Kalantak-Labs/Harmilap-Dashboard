@@ -1,0 +1,234 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Download, FileText, Search, Settings, X, RefreshCw } from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/components/ui/Toast";
+import type { CompanyListItem } from "@/lib/types";
+
+type ReportType = "benpos" | "reconciliation" | "invoice";
+
+const REPORT_META: Record<ReportType, { label: string; desc: string; color: string; filename: (isin: string) => string }> = {
+  benpos: {
+    label: "Beneficiary Position",
+    desc: "BENPOS report with DP/Client IDs, shareholder names, and position data.",
+    color: "var(--accent)",
+    filename: (isin) => `BENPOS_${isin}.pdf`,
+  },
+  reconciliation: {
+    label: "Reconciliation Report",
+    desc: "Share capital reconciliation: NSDL / CDSL / Physical breakdown with percentages.",
+    color: "#16a34a",
+    filename: (isin) => `Reconciliation_${isin}.pdf`,
+  },
+  invoice: {
+    label: "Tax Invoice",
+    desc: "GST tax invoice for RTA annual maintenance charges.",
+    color: "#d97706",
+    filename: (isin) => `Invoice_${isin}.pdf`,
+  },
+};
+
+export default function ReportsPage() {
+  const { can, isAdmin } = useAuth();
+  const { push } = useToast();
+  const router = useRouter();
+
+  const [companies, setCompanies] = useState<CompanyListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [skip, setSkip] = useState(0);
+  const limit = 50;
+  const [generating, setGenerating] = useState<string | null>(null); // "type:id" or "type:bulk"
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const p: Record<string, string | number> = { skip, limit };
+      if (search) p.search = search;
+      const [list, cnt] = await Promise.all([
+        api.companies.list(p),
+        api.companies.count(p),
+      ]);
+      setCompanies(list);
+      setTotal(cnt.count);
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [search, skip]);
+
+  const generate = async (type: ReportType, companyId: string, isin: string) => {
+    const key = `${type}:${companyId}`;
+    setGenerating(key);
+    try {
+      const urls: Record<ReportType, string> = {
+        benpos:         api.reports.downloadBenpos(companyId),
+        reconciliation: api.reports.downloadReconciliation(companyId),
+        invoice:        api.reports.downloadInvoice(companyId),
+      };
+      await api.reports.generate(urls[type], REPORT_META[type].filename(isin));
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const generateBulk = async (type: ReportType) => {
+    const key = `${type}:bulk`;
+    setGenerating(key);
+    try {
+      const urls: Record<ReportType, string> = {
+        benpos:         api.reports.downloadBenposBulk(),
+        reconciliation: api.reports.downloadReconciliationBulk(),
+        invoice:        api.reports.downloadInvoiceBulk(),
+      };
+      const filenames: Record<ReportType, string> = {
+        benpos:         "BENPOS_Bulk.zip",
+        reconciliation: "Reconciliation_Bulk.zip",
+        invoice:        "Invoices_Bulk.zip",
+      };
+      await api.reports.generate(urls[type], filenames[type]);
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Bulk generation failed");
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const totalPages = Math.ceil(total / limit);
+  const page = Math.floor(skip / limit);
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h2>Reports</h2>
+          <div style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 2 }}>
+            Generate PDFs per company or in bulk
+          </div>
+        </div>
+        <div className="page-header-actions">
+          {(isAdmin || can("editor")) && (
+            <button className="btn btn-secondary" onClick={() => router.push("/dashboard/reports/invoice-config")}>
+              <Settings size={15} /> Invoice Config
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Bulk generation cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+        {(Object.keys(REPORT_META) as ReportType[]).map((type) => {
+          const meta = REPORT_META[type];
+          const key = `${type}:bulk`;
+          const busy = generating === key;
+          return (
+            <div key={type} className="card" style={{ padding: "16px 18px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: meta.color }}>{meta.label}</div>
+                <FileText size={16} style={{ color: meta.color, flexShrink: 0 }} />
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>{meta.desc}</div>
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ width: "100%" }}
+                onClick={() => generateBulk(type)}
+                disabled={!!generating}
+              >
+                {busy ? <span className="spinner" /> : <Download size={14} />}
+                {busy ? "Generating…" : `Generate All (ZIP)`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Search */}
+      <div className="filter-bar">
+        <div style={{ position: "relative", flex: 1, minWidth: 200, maxWidth: 360 }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+          <input
+            className="input input-sm"
+            style={{ paddingLeft: 32 }}
+            placeholder="Search company name, ISIN…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setSkip(0); }}
+          />
+        </div>
+        {search && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setSearch("")}><X size={13} /> Clear</button>
+        )}
+        <button className="btn btn-ghost btn-sm btn-icon" onClick={load}><RefreshCw size={14} /></button>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>{total} companies</span>
+      </div>
+
+      {/* Per-company table */}
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>ISIN</th>
+                <th>Security Type</th>
+                <th style={{ textAlign: "center" }}>BENPOS</th>
+                <th style={{ textAlign: "center" }}>Reconciliation</th>
+                <th style={{ textAlign: "center" }}>Tax Invoice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6}><div className="spinner-center"><span className="spinner" /></div></td></tr>
+              ) : companies.length === 0 ? (
+                <tr><td colSpan={6}>
+                  <div className="empty-state"><FileText size={28} /><div>No companies found</div></div>
+                </td></tr>
+              ) : companies.map((c) => (
+                <tr key={c.id}>
+                  <td style={{ fontWeight: 500 }}>{c.company_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                  <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{c.isin_code}</code></td>
+                  <td>{c.security_type ? <span className="badge badge-gray">{c.security_type}</span> : "—"}</td>
+                  {(["benpos", "reconciliation", "invoice"] as ReportType[]).map((type) => {
+                    const key = `${type}:${c.id}`;
+                    const busy = generating === key;
+                    return (
+                      <td key={type} style={{ textAlign: "center" }}>
+                        <button
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title={`Download ${REPORT_META[type].label}`}
+                          onClick={() => generate(type, c.id, c.isin_code)}
+                          disabled={!!generating}
+                          style={{ color: busy ? "var(--text-muted)" : REPORT_META[type].color }}
+                        >
+                          {busy ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Download size={14} />}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderTop: "1px solid var(--border)", fontSize: 13, color: "var(--text-secondary)" }}>
+            <span>Page {page + 1} of {totalPages}</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setSkip(Math.max(0, skip - limit))} disabled={skip === 0}>Previous</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setSkip(skip + limit)} disabled={page >= totalPages - 1}>Next</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -139,6 +139,24 @@ export interface Beneficiary extends BeneficiaryListItem {
   created_at: string;
 }
 
+export interface InvoiceLineItem {
+  id: number;
+  description: string;
+  sac_code: string;
+  amount: number;
+  is_red: boolean;
+  non_taxable: boolean;
+  enabled: boolean;
+}
+
+export interface InvoiceConfig {
+  line_items: InvoiceLineItem[];
+  gst_type: "IGST" | "CGST_SGST";
+  igst_rate: number;
+  cgst_rate: number;
+  sgst_rate: number;
+}
+
 export interface ZipIngestResult {
   files_processed: number;
   files_skipped: number;

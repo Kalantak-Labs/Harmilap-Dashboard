@@ -129,6 +129,42 @@ export const api = {
     },
   },
 
+  reports: {
+    getInvoiceConfig: () =>
+      request<import("./types").InvoiceConfig>("/reports/invoice-config"),
+    updateInvoiceConfig: (body: import("./types").InvoiceConfig) =>
+      request<{ ok: boolean }>("/reports/invoice-config", { method: "PUT", body: JSON.stringify(body) }),
+
+    _download: async (url: string, filename: string) => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to generate report");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    },
+
+    downloadBenpos:             (id: string) => `${BASE}/reports/benpos/${id}`,
+    downloadReconciliation:     (id: string) => `${BASE}/reports/reconciliation/${id}`,
+    downloadInvoice:            (id: string) => `${BASE}/reports/invoice/${id}`,
+    downloadBenposBulk:         ()           => `${BASE}/reports/benpos-bulk`,
+    downloadReconciliationBulk: ()           => `${BASE}/reports/reconciliation-bulk`,
+    downloadInvoiceBulk:        ()           => `${BASE}/reports/invoice-bulk`,
+
+    generate: async (url: string, filename: string) => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to generate");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    },
+  },
+
   companies: {
     list: (params?: Record<string, string | number | boolean | undefined>) => {
       const qs = new URLSearchParams();
