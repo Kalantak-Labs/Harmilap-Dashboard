@@ -135,22 +135,23 @@ export const api = {
     updateInvoiceConfig: (body: import("./types").InvoiceConfig) =>
       request<{ ok: boolean }>("/reports/invoice-config", { method: "PUT", body: JSON.stringify(body) }),
 
-    _download: async (url: string, filename: string) => {
-      const token = localStorage.getItem("access_token");
-      const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error("Failed to generate report");
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-    },
-
     downloadBenpos:             (id: string) => `${BASE}/reports/benpos/${id}`,
-    downloadReconciliation:     (id: string) => `${BASE}/reports/reconciliation/${id}`,
+    downloadReconciliation:     (id: string, params?: { report_date?: string; ref_prefix?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.report_date) qs.set("report_date", params.report_date);
+      if (params?.ref_prefix)  qs.set("ref_prefix", params.ref_prefix);
+      const q = qs.toString();
+      return `${BASE}/reports/reconciliation/${id}${q ? `?${q}` : ""}`;
+    },
     downloadInvoice:            (id: string) => `${BASE}/reports/invoice/${id}`,
     downloadBenposBulk:         ()           => `${BASE}/reports/benpos-bulk`,
-    downloadReconciliationBulk: ()           => `${BASE}/reports/reconciliation-bulk`,
+    downloadReconciliationBulk: (params?: { report_date?: string; ref_prefix?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.report_date) qs.set("report_date", params.report_date);
+      if (params?.ref_prefix)  qs.set("ref_prefix", params.ref_prefix);
+      const q = qs.toString();
+      return `${BASE}/reports/reconciliation-bulk${q ? `?${q}` : ""}`;
+    },
     downloadInvoiceBulk:        ()           => `${BASE}/reports/invoice-bulk`,
 
     generate: async (url: string, filename: string) => {

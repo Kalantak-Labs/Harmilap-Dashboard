@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, FileText, Search, Settings, X, RefreshCw } from "lucide-react";
+import { Download, FileText, Search, Settings, X, RefreshCw, Calendar } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
@@ -31,6 +31,24 @@ const REPORT_META: Record<ReportType, { label: string; desc: string; color: stri
   },
 };
 
+interface ReconParams {
+  report_date: string;
+  ref_prefix: string;
+}
+
+function defaultReconParams(): ReconParams {
+  const today = new Date();
+  const fy = today.getMonth() >= 3
+    ? `${today.getFullYear()}-${String(today.getFullYear() + 1).slice(2)}`
+    : `${today.getFullYear() - 1}-${String(today.getFullYear()).slice(2)}`;
+  const mon = today.toLocaleString("en-US", { month: "short" }).toUpperCase();
+  const yr  = String(today.getFullYear()).slice(2);
+  return {
+    report_date: today.toISOString().slice(0, 10),
+    ref_prefix:  `${fy}/NSDL/${mon}${yr}`,
+  };
+}
+
 export default function ReportsPage() {
   const { can, isAdmin } = useAuth();
   const { push } = useToast();
@@ -42,7 +60,15 @@ export default function ReportsPage() {
   const [search, setSearch] = useState("");
   const [skip, setSkip] = useState(0);
   const limit = 50;
-  const [generating, setGenerating] = useState<string | null>(null); // "type:id" or "type:bulk"
+  const [generating, setGenerating] = useState<string | null>(null);
+
+  // Reconciliation modal state
+  const [reconModal, setReconModal] = useState<{
+    mode: "single" | "bulk";
+    companyId?: string;
+    isin?: string;
+    params: ReconParams;
+  } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -65,15 +91,17 @@ export default function ReportsPage() {
   useEffect(() => { load(); }, [search, skip]);
 
   const generate = async (type: ReportType, companyId: string, isin: string) => {
+    if (type === "reconciliation") {
+      setReconModal({ mode: "single", companyId, isin, params: defaultReconParams() });
+      return;
+    }
     const key = `${type}:${companyId}`;
     setGenerating(key);
     try {
-      const urls: Record<ReportType, string> = {
-        benpos:         api.reports.downloadBenpos(companyId),
-        reconciliation: api.reports.downloadReconciliation(companyId),
-        invoice:        api.reports.downloadInvoice(companyId),
-      };
-      await api.reports.generate(urls[type], REPORT_META[type].filename(isin));
+      const url = type === "benpos"
+        ? api.reports.downloadBenpos(companyId)
+        : api.reports.downloadInvoice(companyId);
+      await api.reports.generate(url, REPORT_META[type].filename(isin));
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -82,24 +110,59 @@ export default function ReportsPage() {
   };
 
   const generateBulk = async (type: ReportType) => {
+    if (type === "reconciliation") {
+      setReconModal({ mode: "bulk", params: defaultReconParams() });
+      return;
+    }
     const key = `${type}:bulk`;
     setGenerating(key);
     try {
-      const urls: Record<ReportType, string> = {
-        benpos:         api.reports.downloadBenposBulk(),
-        reconciliation: api.reports.downloadReconciliationBulk(),
-        invoice:        api.reports.downloadInvoiceBulk(),
-      };
+      const url = type === "benpos"
+        ? api.reports.downloadBenposBulk()
+        : api.reports.downloadInvoiceBulk();
       const filenames: Record<ReportType, string> = {
-        benpos:         "BENPOS_Bulk.zip",
+        benpos: "BENPOS_Bulk.zip",
         reconciliation: "Reconciliation_Bulk.zip",
-        invoice:        "Invoices_Bulk.zip",
+        invoice: "Invoices_Bulk.zip",
       };
-      await api.reports.generate(urls[type], filenames[type]);
+      await api.reports.generate(url, filenames[type]);
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Bulk generation failed");
     } finally {
       setGenerating(null);
+    }
+  };
+
+  const confirmRecon = async () => {
+    if (!reconModal) return;
+    const { mode, companyId, isin, params } = reconModal;
+    const reconParams = {
+      report_date: params.report_date || undefined,
+      ref_prefix: params.ref_prefix || undefined,
+    };
+    if (mode === "single" && companyId && isin) {
+      const key = `reconciliation:${companyId}`;
+      setGenerating(key);
+      setReconModal(null);
+      try {
+        const url = api.reports.downloadReconciliation(companyId, reconParams);
+        await api.reports.generate(url, REPORT_META.reconciliation.filename(isin));
+      } catch (e: unknown) {
+        push("error", e instanceof Error ? e.message : "Generation failed");
+      } finally {
+        setGenerating(null);
+      }
+    } else {
+      setGenerating("reconciliation:bulk");
+      setReconModal(null);
+      try {
+        const url = api.reports.downloadReconciliationBulk(reconParams);
+        await api.reports.generate(url, "Reconciliation_Bulk.zip");
+      } catch (e: unknown) {
+        push("error", e instanceof Error ? e.message : "Bulk generation failed");
+      } finally {
+        setGenerating(null);
+      }
     }
   };
 
@@ -108,6 +171,59 @@ export default function ReportsPage() {
 
   return (
     <div>
+      {/* Reconciliation params modal */}
+      {reconModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} onClick={() => setReconModal(null)} />
+          <div className="card" style={{ position: "relative", zIndex: 1, width: 420, padding: "24px 24px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Reconciliation Report</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  {reconModal.mode === "bulk" ? "Bulk generation — set parameters" : `For ${reconModal.isin}`}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setReconModal(null)}><X size={15} /></button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Calendar size={13} /> Report Date (as on)
+              </label>
+              <input
+                className="input input-sm"
+                type="date"
+                value={reconModal.params.report_date}
+                onChange={(e) => setReconModal((m) => m ? { ...m, params: { ...m.params, report_date: e.target.value } } : m)}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+                Appears in title: &quot;Report on Share Capital Reconciliation Report as on…&quot;
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Reference Number Prefix</label>
+              <input
+                className="input input-sm"
+                placeholder="e.g. 2026-27/NSDL/MAR26"
+                value={reconModal.params.ref_prefix}
+                onChange={(e) => setReconModal((m) => m ? { ...m, params: { ...m.params, ref_prefix: e.target.value } } : m)}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+                Full ref: <code>{reconModal.params.ref_prefix}/RTAN&lt;rta_code&gt;</code>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setReconModal(null)}>Cancel</button>
+              <button className="btn btn-primary btn-sm" style={{ background: "#16a34a", borderColor: "#16a34a" }} onClick={confirmRecon}>
+                Generate PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h2>Reports</h2>

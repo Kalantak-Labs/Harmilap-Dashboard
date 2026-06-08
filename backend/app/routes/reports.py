@@ -5,15 +5,17 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func as sql_func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_permission
 from app.models import Company, Beneficiary
 from app.models.invoice_config import InvoiceConfig, DEFAULT_LINE_ITEMS
+from app.models.generated_invoice import GeneratedInvoice
 from app.models.user import User
 from app.services.pdf_generator import (
+    current_fy,
     generate_benpos_pdf,
     generate_invoice_pdf,
     generate_report_pdf,
@@ -80,10 +82,26 @@ def _stream_zip(data: bytes, filename: str) -> StreamingResponse:
     )
 
 
-def _invoice_no(company: dict) -> str:
-    rta = (company.get("rta_code") or "")[:6] or company.get("id", "")[:6]
+async def _next_invoice_no(company: Company, db: AsyncSession) -> str:
+    """Return next sequential invoice number for this company in the current FY."""
     today = date.today()
-    return f"RTAN{rta}/{today.strftime('%d%m%y')}"
+    fy = current_fy(today)
+    result = await db.execute(
+        select(sql_func.count(GeneratedInvoice.id))
+        .where(GeneratedInvoice.company_id == company.id)
+        .where(GeneratedInvoice.fiscal_year == fy)
+    )
+    seq = (result.scalar() or 0) + 1
+    rta = company.rta_code or ""
+    inv_no = f"RTAN{rta}/{seq}"
+    db.add(GeneratedInvoice(
+        company_id=company.id,
+        fiscal_year=fy,
+        seq_no=seq,
+        invoice_no=inv_no,
+    ))
+    await db.commit()
+    return inv_no
 
 
 # ── Invoice Config ────────────────────────────────────────────────────────────
@@ -175,18 +193,29 @@ async def benpos_bulk(
 @router.post("/reconciliation/{company_id}")
 async def reconciliation_pdf(
     company_id: str,
+    report_date: Optional[date] = None,
+    ref_prefix: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("viewer")),
 ):
+    """
+    report_date : the "as on" date for the report title (customizable via query param)
+    ref_prefix  : the part of the ref number before /RTAN{code} (customizable via query param)
+                  e.g. ?ref_prefix=2026-27/NSDL/MAR26
+    """
     company = await _get_company(company_id, db)
     _, rd = await _beneficiaries_for(company.isin_code, db)
-    pdf = generate_report_pdf(_company_dict(company), rd)
+    # report_date from query overrides the beneficiary record_date
+    effective_date = report_date or rd
+    pdf = generate_report_pdf(_company_dict(company), effective_date, ref_prefix=ref_prefix)
     isin = company.isin_code or company_id
     return _stream_pdf(pdf, f"Reconciliation_{isin}.pdf")
 
 
 @router.post("/reconciliation-bulk")
 async def reconciliation_bulk(
+    report_date: Optional[date] = None,
+    ref_prefix: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("can_download")),
 ):
@@ -196,7 +225,8 @@ async def reconciliation_bulk(
     for c in companies:
         try:
             _, rd = await _beneficiaries_for(c.isin_code, db)
-            pdf = generate_report_pdf(_company_dict(c), rd)
+            effective_date = report_date or rd
+            pdf = generate_report_pdf(_company_dict(c), effective_date, ref_prefix=ref_prefix)
             entries.append((f"Reconciliation_{c.isin_code}.pdf", pdf))
         except Exception:
             pass
@@ -214,7 +244,7 @@ async def invoice_pdf(
     company = await _get_company(company_id, db)
     cfg = await _get_config(db)
     cd  = _company_dict(company)
-    inv_no = _invoice_no(cd)
+    inv_no = await _next_invoice_no(company, db)
     cfg_dict = {
         "line_items": cfg.line_items,
         "gst_type":   cfg.gst_type,
@@ -245,9 +275,8 @@ async def invoice_bulk(
     entries: list[tuple[str, bytes]] = []
     for c in companies:
         try:
-            cd     = _company_dict(c)
-            inv_no = _invoice_no(cd)
-            pdf    = generate_invoice_pdf(cd, cfg_dict, inv_no, date.today())
+            inv_no = await _next_invoice_no(c, db)
+            pdf    = generate_invoice_pdf(_company_dict(c), cfg_dict, inv_no, date.today())
             entries.append((f"Invoice_{c.isin_code}.pdf", pdf))
         except Exception:
             pass
