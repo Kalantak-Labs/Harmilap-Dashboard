@@ -62,3 +62,88 @@ export interface IngestResult {
   skipped: number;
   errors: string[];
 }
+
+export interface BeneficiaryListItem {
+  id: string;
+  isin_code: string;
+  dp_id: string;
+  client_id: string;
+  record_date: string | null;
+  first_holder_name: string | null;
+  first_holder_pan: string | null;
+  beneficiary_type: number | null;
+  account_category: number | null;
+  free_positions: number | null;
+  lockin_positions: number | null;
+  block_positions: number | null;
+  pledged_positions: number | null;
+  ifsc: string | null;
+  bank_account_type: number | null;
+  updated_at: string;
+}
+
+export interface Beneficiary extends BeneficiaryListItem {
+  beneficiary_sub_type: number | null;
+  occupation: number | null;
+  beneficiary_status: number | null;
+  first_holder_father_husband_name: string | null;
+  first_holder_email: string | null;
+  first_holder_mapin_id: string | null;
+  second_holder_name: string | null;
+  second_holder_father_husband_name: string | null;
+  second_holder_pan: string | null;
+  second_holder_email: string | null;
+  second_holder_mapin_id: string | null;
+  third_holder_name: string | null;
+  third_holder_father_husband_name: string | null;
+  third_holder_pan: string | null;
+  third_holder_email: string | null;
+  third_holder_mapin_id: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  address_line3: string | null;
+  address_line4: string | null;
+  pin_code: string | null;
+  phone: string | null;
+  fax: string | null;
+  nominee_guardian_indicator: string | null;
+  nominee_guardian_name: string | null;
+  nominee_address_line1: string | null;
+  nominee_address_line2: string | null;
+  nominee_address_line3: string | null;
+  nominee_address_line4: string | null;
+  nominee_pin_code: string | null;
+  dob_minor: string | null;
+  minor_indicator: string | null;
+  bank_account_number: string | null;
+  bank_name_branch: string | null;
+  bank_address_line1: string | null;
+  bank_address_line2: string | null;
+  bank_address_line3: string | null;
+  bank_address_line4: string | null;
+  bank_pin_code: string | null;
+  micr_code: string | null;
+  rbi_reference_number: string | null;
+  rbi_approval_date: string | null;
+  sebi_registration_number: string | null;
+  tax_deduction_status: string | null;
+  pledged_lockin_positions: number | null;
+  unconfirmed_pledged_positions: number | null;
+  unconfirmed_pledged_lockin_positions: number | null;
+  remat_positions: number | null;
+  remat_lockin_positions: number | null;
+  idd_positions: number | null;
+  cm_pool_positions: number | null;
+  cc_settlement_positions: number | null;
+  rgess_flag: string | null;
+  created_at: string;
+}
+
+export interface ZipIngestResult {
+  files_processed: number;
+  files_skipped: number;
+  total_created: number;
+  total_updated: number;
+  total_skipped: number;
+  errors: string[];
+}

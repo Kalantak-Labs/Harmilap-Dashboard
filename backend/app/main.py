@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import User, Session, Company  # ensure models are registered
-from app.routes import auth, users, companies
+from app.models import User, Session, Company, Beneficiary, BenposLockin  # ensure models are registered
+from app.routes import auth, users, companies, beneficiaries
 
 
 @asynccontextmanager
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(companies.router)
+app.include_router(beneficiaries.router)
 
 
 @app.get("/health")

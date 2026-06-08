@@ -171,3 +171,59 @@ def build_export_excel(companies: list[dict]) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+BENEF_EXPORT_HEADERS = [
+    "ISIN Code", "DP ID", "Client ID", "Record Date",
+    "First Holder Name", "First Holder PAN", "First Holder Email",
+    "Second Holder Name", "Second Holder PAN",
+    "Third Holder Name", "Third Holder PAN",
+    "Beneficiary Type", "Account Category", "Status",
+    "Address Line 1", "Address Line 2", "Address Line 3", "Address Line 4", "Pin Code",
+    "Bank Account Number", "Bank Name & Branch", "IFSC", "MICR Code", "Bank Account Type",
+    "Free Positions", "Lock-in Positions", "Block Positions", "Pledged Positions",
+    "Remat Positions", "IDD Positions", "CM Pool Positions", "CC Settlement Positions",
+    "Minor", "RGESS Flag",
+]
+
+BENEF_EXPORT_FIELDS = [
+    "isin_code", "dp_id", "client_id", "record_date",
+    "first_holder_name", "first_holder_pan", "first_holder_email",
+    "second_holder_name", "second_holder_pan",
+    "third_holder_name", "third_holder_pan",
+    "beneficiary_type", "account_category", "beneficiary_status",
+    "address_line1", "address_line2", "address_line3", "address_line4", "pin_code",
+    "bank_account_number", "bank_name_branch", "ifsc", "micr_code", "bank_account_type",
+    "free_positions", "lockin_positions", "block_positions", "pledged_positions",
+    "remat_positions", "idd_positions", "cm_pool_positions", "cc_settlement_positions",
+    "minor_indicator", "rgess_flag",
+]
+
+
+def build_beneficiary_export(rows: list[dict]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Beneficiaries"
+
+    header_fill = PatternFill("solid", fgColor="1a1a1a")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    for col_idx, header in enumerate(BENEF_EXPORT_HEADERS, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(col_idx)].width = max(len(header) + 4, 14)
+
+    ws.row_dimensions[1].height = 22
+
+    for row_idx, row in enumerate(rows, 2):
+        for col_idx, field in enumerate(BENEF_EXPORT_FIELDS, 1):
+            val = row.get(field)
+            if hasattr(val, "isoformat"):
+                val = val.isoformat()
+            ws.cell(row=row_idx, column=col_idx, value=val)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

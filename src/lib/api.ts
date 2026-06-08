@@ -102,6 +102,33 @@ export const api = {
       request<void>("/users/me/password", { method: "PATCH", body: JSON.stringify(body) }),
   },
 
+  beneficiaries: {
+    list: (params?: Record<string, string | number | boolean | undefined>) => {
+      const qs = new URLSearchParams();
+      if (params) Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+      const q = qs.toString();
+      return request<import("./types").BeneficiaryListItem[]>(`/beneficiaries/${q ? `?${q}` : ""}`);
+    },
+    count: (params?: Record<string, string | number | boolean | undefined>) => {
+      const qs = new URLSearchParams();
+      if (params) Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+      const q = qs.toString();
+      return request<{ count: number }>(`/beneficiaries/count${q ? `?${q}` : ""}`);
+    },
+    get: (id: string) => request<import("./types").Beneficiary>(`/beneficiaries/${id}`),
+    ingestZip: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<import("./types").ZipIngestResult>("/beneficiaries/ingest-zip", { method: "POST", body: form });
+    },
+    exportUrl: (params?: Record<string, string | undefined>) => {
+      const qs = new URLSearchParams();
+      if (params) Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+      const q = qs.toString();
+      return `${BASE}/beneficiaries/export${q ? `?${q}` : ""}`;
+    },
+  },
+
   companies: {
     list: (params?: Record<string, string | number | boolean | undefined>) => {
       const qs = new URLSearchParams();
