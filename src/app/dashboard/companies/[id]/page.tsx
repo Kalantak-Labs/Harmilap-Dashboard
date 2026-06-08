@@ -1,19 +1,246 @@
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import CompanyEditForm from "./CompanyEditForm";
-import { getCompanyById } from "@/lib/mock-data";
+"use client";
 
-export default async function CompanyEditPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const company = getCompanyById(id);
-  if (!company) notFound();
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Edit2, Trash2, Check, X } from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/components/ui/Toast";
+import ConfirmModal from "@/components/ui/ConfirmModal";
+import TagInput from "@/components/ui/TagInput";
+import type { Company } from "@/lib/types";
+
+type EditState = Partial<Company> & {
+  total_shares?: string | number | null;
+  nsdl_shares?: string | number | null;
+  cdsl_shares?: string | number | null;
+  physical_shares?: string | number | null;
+};
+
+const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
+  <>
+    <div className="detail-label">{label}</div>
+    <div className="detail-value">{value ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+  </>
+);
+
+export default function CompanyDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { can } = useAuth();
+  const { push } = useToast();
+
+  const [company, setCompany] = useState<Company | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<EditState>({});
+  const [saving, setSaving] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const load = async () => {
+    try {
+      const c = await api.companies.get(id);
+      setCompany(c);
+      setForm(c);
+    } catch {
+      push("error", "Company not found");
+      router.push("/dashboard/companies");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [id]);
+
+  const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const updated = await api.companies.update(id, {
+        ...form,
+        total_shares: form.total_shares != null && String(form.total_shares) !== "" ? Number(form.total_shares) : null,
+        nsdl_shares: form.nsdl_shares != null && String(form.nsdl_shares) !== "" ? Number(form.nsdl_shares) : null,
+        cdsl_shares: form.cdsl_shares != null && String(form.cdsl_shares) !== "" ? Number(form.cdsl_shares) : null,
+        physical_shares: form.physical_shares != null && String(form.physical_shares) !== "" ? Number(form.physical_shares) : null,
+      });
+      setCompany(updated);
+      setForm(updated);
+      setEditing(false);
+      push("success", "Company updated");
+    } catch (err: unknown) {
+      push("error", err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteCompany = async () => {
+    setDeleting(true);
+    try {
+      await api.companies.delete(id);
+      push("success", "Company deleted");
+      router.push("/dashboard/companies");
+    } catch (err: unknown) {
+      push("error", err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const cancelEdit = () => { setForm(company!); setEditing(false); };
+
+  if (loading) return <div className="spinner-center"><span className="spinner spinner-lg" /></div>;
+  if (!company) return null;
+
+  const inp = (field: keyof EditState, type = "text") => (
+    <input
+      className="input input-sm"
+      type={type}
+      value={(form[field] as string) ?? ""}
+      onChange={(e) => set(field, e.target.value)}
+    />
+  );
+
+  const ta = (field: keyof EditState) => (
+    <textarea className="input input-sm" rows={2} value={(form[field] as string) ?? ""} onChange={(e) => set(field, e.target.value)} />
+  );
+
+  const chk = (field: keyof EditState) => (
+    <input type="checkbox" checked={!!(form[field])} onChange={(e) => set(field, e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)" }} />
+  );
+
   return (
-    <div className="flex-col gap-6 w-full" style={{ maxWidth: "800px", margin: "0 auto" }}>
-      <header className="flex justify-between items-center mb-4">
-        <div><h2>Edit Company Profile: {company.name}</h2><p className="text-sub">Modify CIN, contact details, and addresses.</p></div>
-        <Link href="/dashboard/companies" className="btn-primary" style={{ background: "transparent", color: "var(--text-primary)", border: "1px solid var(--text-muted)" }}>Back</Link>
-      </header>
-      <div className="glass-panel p-6 animate-in"><CompanyEditForm company={company} /></div>
+    <div>
+      {/* Header */}
+      <div className="page-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => router.push("/dashboard/companies")}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <h2>{company.company_name ?? company.isin_code}</h2>
+            <div style={{ color: "var(--text-secondary)", fontSize: 12, marginTop: 1 }}>
+              ISIN: {company.isin_code}
+              {company.rta_code && ` · RTA: ${company.rta_code}`}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {editing ? (
+            <>
+              <button className="btn btn-secondary" onClick={cancelEdit} disabled={saving}><X size={14} /> Cancel</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>
+                {saving ? <span className="spinner" /> : <Check size={14} />}
+                Save
+              </button>
+            </>
+          ) : (
+            <>
+              {can("editor") && (
+                <button className="btn btn-secondary" onClick={() => setEditing(true)}><Edit2 size={14} /> Edit</button>
+              )}
+              {can("editor") && (
+                <button className="btn btn-danger" onClick={() => setShowDelete(true)}><Trash2 size={14} /> Delete</button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ overflow: "hidden" }}>
+        {/* Section: Core */}
+        <div className="detail-grid">
+          <div className="detail-section-title">Core Information</div>
+          <Field label="ISIN Code" value={<code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.isin_code}</code>} />
+          <Field label="Company Name" value={editing ? inp("company_name") : company.company_name} />
+          <Field label="RTA Code" value={editing ? inp("rta_code") : company.rta_code} />
+          <Field label="Security Type" value={editing ? inp("security_type") : company.security_type ? <span className="badge badge-gray">{company.security_type}</span> : null} />
+        </div>
+
+        {/* Section: Contact */}
+        <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="detail-section-title">Contact</div>
+          <Field label="Email IDs" value={editing
+            ? <TagInput values={(form.email_ids as string[]) ?? []} onChange={(v) => set("email_ids", v)} />
+            : company.email_ids?.length ? company.email_ids.join(", ") : null}
+          />
+          <Field label="Contact Numbers" value={editing
+            ? <TagInput values={(form.contact_numbers as string[]) ?? []} onChange={(v) => set("contact_numbers", v)} />
+            : company.contact_numbers?.length ? company.contact_numbers.join(", ") : null}
+          />
+          <Field label="Authorized Person" value={editing ? inp("authorized_person_name") : company.authorized_person_name} />
+          <Field label="Designation" value={editing ? inp("authorized_person_designation") : company.authorized_person_designation} />
+        </div>
+
+        {/* Section: Tax & Legal */}
+        <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="detail-section-title">Tax & Legal</div>
+          <Field label="GST Number" value={editing ? inp("gst_number") : company.gst_number} />
+          <Field label="TAN Number" value={editing ? inp("tan_number") : company.tan_number} />
+          <Field label="PAN Number" value={editing ? inp("pan_number") : company.pan_number} />
+        </div>
+
+        {/* Section: Registered Address */}
+        <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="detail-section-title">Registered Address</div>
+          <Field label="Line 1" value={editing ? inp("reg_address_line1") : company.reg_address_line1} />
+          <Field label="Line 2" value={editing ? inp("reg_address_line2") : company.reg_address_line2} />
+          <Field label="Line 3" value={editing ? inp("reg_address_line3") : company.reg_address_line3} />
+          <Field label="Line 4" value={editing ? inp("reg_address_line4") : company.reg_address_line4} />
+          <Field label="City" value={editing ? inp("reg_city") : company.reg_city} />
+          <Field label="Pin Code" value={editing ? inp("reg_pin_code") : company.reg_pin_code} />
+        </div>
+
+        {/* Section: Billing Address */}
+        <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="detail-section-title">Billing Address</div>
+          <div className="detail-label">Billing Address</div>
+          <div className="detail-value" style={{ gridColumn: "span 1" }}>{editing ? ta("billing_address") : company.billing_address ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+        </div>
+
+        {/* Section: Share Details */}
+        <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="detail-section-title">Share Details</div>
+          <Field label="Total Shares" value={editing ? inp("total_shares", "number") : company.total_shares?.toLocaleString()} />
+          <Field label="Physical Shares" value={editing ? inp("physical_shares", "number") : company.physical_shares?.toLocaleString()} />
+          <Field label="Has NSDL Shares" value={editing
+            ? chk("has_nsdl_shares")
+            : company.has_nsdl_shares ? <span className="badge badge-green">Yes</span> : <span className="badge badge-gray">No</span>}
+          />
+          <Field label="NSDL Shares" value={editing && form.has_nsdl_shares
+            ? inp("nsdl_shares", "number")
+            : company.has_nsdl_shares ? company.nsdl_shares?.toLocaleString() : null}
+          />
+          <Field label="Has CDSL Shares" value={editing
+            ? chk("has_cdsl_shares")
+            : company.has_cdsl_shares ? <span className="badge badge-blue">Yes</span> : <span className="badge badge-gray">No</span>}
+          />
+          <Field label="CDSL Shares" value={editing && form.has_cdsl_shares
+            ? inp("cdsl_shares", "number")
+            : company.has_cdsl_shares ? company.cdsl_shares?.toLocaleString() : null}
+          />
+        </div>
+
+        {/* Audit footer */}
+        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg)", display: "flex", gap: 24, fontSize: 12, color: "var(--text-muted)" }}>
+          <span>Created: {new Date(company.created_at).toLocaleString("en-IN")}</span>
+          <span>Updated: {new Date(company.updated_at).toLocaleString("en-IN")}</span>
+        </div>
+      </div>
+
+      {showDelete && (
+        <ConfirmModal
+          title="Delete Company"
+          message={`Are you sure you want to delete "${company.company_name ?? company.isin_code}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          loading={deleting}
+          onConfirm={deleteCompany}
+          onClose={() => setShowDelete(false)}
+        />
+      )}
     </div>
   );
 }

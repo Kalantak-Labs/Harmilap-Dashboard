@@ -1,33 +1,21 @@
-import Link from "next/link";
-import styles from "./page.module.css";
+"use client";
 
-export default function Home() {
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+
+export default function Root() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    router.replace(user ? "/dashboard" : "/login");
+  }, [user, loading, router]);
+
   return (
-    <main className={styles.main}>
-      <div className={`${styles.glassCard} animate-in`}>
-        <div className={styles.header}>
-          <h1>Harmilap Share Transfer Agents</h1>
-          <p className="text-sub">Registrar & Transfer Agent (RTA) | Back Office System</p>
-        </div>
-
-        <div className={styles.body}>
-          <p>
-            Welcome to the digital platform built for Harmilap Share Transfer Agents, located in
-            Indra Nagar, near Azadpur Mandi, Delhi. This system manages share records, corporate
-            actions, depository interfaces, and SEBI compliance.
-          </p>
-          <div className={styles.disclaimer}>
-            <strong>Disclaimer:</strong> This is the Back Office Management Version. For Issuer Client
-            Companies, use ISIN + RTA User ID. For Shareholders, use PAN Card + Folio Number.
-          </div>
-        </div>
-
-        <div className={styles.actions}>
-          <Link href="/dashboard" className="btn-primary w-full" style={{ textAlign: "center" }}>
-            Open Dashboard
-          </Link>
-        </div>
-      </div>
-    </main>
+    <div className="page-loader">
+      <span className="spinner spinner-lg" />
+    </div>
   );
 }

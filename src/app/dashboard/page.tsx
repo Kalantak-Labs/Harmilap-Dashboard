@@ -1,86 +1,70 @@
-import styles from "./page.module.css";
-import { dashboardStats } from "@/lib/mock-data";
+"use client";
+
+import { useEffect, useState } from "react";
+import { Building2, Shield, TrendingUp } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
+import Link from "next/link";
 
 export default function DashboardPage() {
-  const {
-    totalCompanies,
-    totalHolders,
-    totalActions,
-    activeInvoices,
-    newCompaniesThisMonth,
-    recentCompanies,
-    recentActions,
-  } = dashboardStats;
+  const { user } = useAuth();
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.companies.count().then((r) => setCount(r.count)).catch(() => {});
+  }, []);
 
   return (
-    <div className={styles.dashboardContainer}>
-      <header className={styles.header}>
-        <h2>Welcome back, Demo User</h2>
-        <p className="text-sub">Here is your RTA overview for today.</p>
-      </header>
+    <div>
+      <div className="page-header">
+        <h2>Dashboard</h2>
+        <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+          Welcome back, <strong>{user?.name}</strong>
+        </div>
+      </div>
 
-      <section className={styles.statsGrid}>
-        <div className={`${styles.statCard} glass-panel animate-in`} style={{ animationDelay: "0.1s" }}>
-          <div className={styles.statLabel}>Issuer Companies</div>
-          <div className={styles.statValue}>{totalCompanies}</div>
-          <div className={styles.statMeta}>
-            {newCompaniesThisMonth > 0
-              ? `+${newCompaniesThisMonth} this month`
-              : "No new companies this month"}
+      <div className="stat-grid">
+        <div className="stat-card">
+          <div className="stat-card-label">Companies</div>
+          <div className="stat-card-value">{count ?? "—"}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+        <Link href="/dashboard/companies" style={{ textDecoration: "none" }}>
+          <div className="card" style={{ padding: 20, cursor: "pointer", transition: "box-shadow var(--transition)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "var(--shadow)")}
+            onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "")}>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 8, display: "flex" }}>
+                <Building2 size={18} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 600 }}>Companies</div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>View, filter and manage client companies</div>
+              </div>
+            </div>
           </div>
-        </div>
+        </Link>
 
-        <div className={`${styles.statCard} glass-panel animate-in`} style={{ animationDelay: "0.2s" }}>
-          <div className={styles.statLabel}>Total Shareholders</div>
-          <div className={styles.statValue}>{totalHolders}</div>
-          <div className={styles.statMeta}>Registered Profiles</div>
-        </div>
-
-        <div className={`${styles.statCard} glass-panel animate-in`} style={{ animationDelay: "0.3s" }}>
-          <div className={styles.statLabel}>Total Actions</div>
-          <div className={styles.statValue}>{totalActions}</div>
-          <div className={styles.statMeta}>Allotments & Issues</div>
-        </div>
-
-        <div className={`${styles.statCard} glass-panel animate-in`} style={{ animationDelay: "0.4s" }}>
-          <div className={styles.statLabel}>Generated Invoices</div>
-          <div className={styles.statValue}>{activeInvoices}</div>
-          <div className={styles.statMeta}>Processed Billing</div>
-        </div>
-      </section>
-
-      <section className={styles.recentActivity}>
-        <div className={`${styles.panelCard} glass-panel animate-in`} style={{ animationDelay: "0.5s" }}>
-          <h3>Recent System Activity</h3>
-          <div className={styles.activityList}>
-            {recentCompanies.length === 0 && recentActions.length === 0 && (
-              <span className="text-sub">No recent activity.</span>
-            )}
-            {recentCompanies.map((c) => (
-              <div className={styles.activityItem} key={`comp-${c.id}`}>
-                <span className={styles.activityDot}></span>
-                <div className={styles.activityDetails}>
-                  <strong>New Issuer Onboarded</strong>
-                  <span className="text-sub">
-                    {c.cin} ({c.name})
-                  </span>
+        {user?.role === "admin" && (
+          <Link href="/dashboard/users" style={{ textDecoration: "none" }}>
+            <div className="card" style={{ padding: 20, cursor: "pointer", transition: "box-shadow var(--transition)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "var(--shadow)")}
+              onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "")}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 8, display: "flex" }}>
+                  <Shield size={18} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600 }}>User Management</div>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>Create users and assign permissions</div>
                 </div>
               </div>
-            ))}
-            {recentActions.map((a) => (
-              <div className={styles.activityItem} key={`act-${a.id}`}>
-                <span className={styles.activityDot} style={{ background: "var(--warning)" }}></span>
-                <div className={styles.activityDetails}>
-                  <strong>Corporate Action Executed</strong>
-                  <span className="text-sub">
-                    {a.totalShares} shares extended on ISIN {a.security.isin}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+            </div>
+          </Link>
+        )}
+      </div>
     </div>
   );
 }
