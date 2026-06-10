@@ -1,4 +1,3 @@
-from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -8,14 +7,8 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
-    cors_origins: list[str] = ["http://localhost:3000"]
-
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: object) -> object:
-        if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v
+    # Comma-separated origins, e.g. "https://app.example.com,http://localhost:3000"
+    cors_origins: str = "http://localhost:3000"
 
     class Config:
         env_file = ".env"
