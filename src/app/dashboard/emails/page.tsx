@@ -576,9 +576,21 @@ function SendSection({ variables }: { variables: Record<string, TemplateVariable
     setSendResult(null);
   }, [emailType]);
 
-  // Load companies once
+  // Load all companies (paginate in batches of 500 to bypass the per-request cap)
   useEffect(() => {
-    api.companies.list({ limit: 500 }).then(setCompanies).catch(() => {});
+    const fetchAll = async () => {
+      const PAGE = 500;
+      let skip = 0;
+      const all: CompanyListItem[] = [];
+      while (true) {
+        const page = await api.companies.list({ limit: PAGE, skip });
+        all.push(...page);
+        if (page.length < PAGE) break;
+        skip += PAGE;
+      }
+      setCompanies(all);
+    };
+    fetchAll().catch(() => {});
   }, []);
 
   const filtered = companies.filter((c) => {
