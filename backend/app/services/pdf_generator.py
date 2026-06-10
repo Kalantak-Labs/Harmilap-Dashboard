@@ -187,25 +187,23 @@ def generate_benpos_pdf(
 ) -> bytes:
     s_bold  = _s("bb", "Helvetica-Bold", 11, 15)
     s_body  = _s("b",  size=11, leading=15)
+    s_just  = _s("j",  size=11, leading=15, align=TA_JUSTIFY)
     s_red_c = _s("rc", "Helvetica-Bold", 11, 15, color=RED, align=TA_CENTER)
     s_hdr   = _s("th", "Helvetica-Bold", 10, 13)
     s_cell  = _s("tc", size=10, leading=13)
     s_right = _s("tr", size=10, leading=13, align=TA_RIGHT)
     s_tot_l = _s("ttl", "Helvetica-Bold", 10, 13)
     s_tot_r = _s("ttr", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
-    s_red_b = _s("rb", "Helvetica-Bold", 11, 15, color=RED)
 
     story = []
 
-    # Company header info — prefer billing_address
     addr = _addr(company)
+    name = (company.get("company_name") or "").upper()
 
     info = Table(
         [
-            [P("Company / Firm Name", s_bold), P(":", s_bold),
-             P(company.get("company_name") or "", s_bold)],
-            [P("Regd. / Billing Address", s_bold), P(":", s_bold),
-             P(addr, s_bold)],
+            [P("Company Name", s_bold), P(":", s_bold), P(name, s_bold)],
+            [P("Regd. / Billing Address", s_bold), P(":", s_bold), P(addr.upper(), s_bold)],
         ],
         colWidths=[CW * 0.36, 12, CW * 0.62],
     )
@@ -213,10 +211,11 @@ def generate_benpos_pdf(
     story.append(info)
     story.append(SP(8))
 
-    rd_str       = record_date.strftime("%d.%m.%Y") if record_date else "N/A"
-    isin         = company.get("isin_code", "")
+    rd_str        = record_date.strftime("%d.%m.%Y") if record_date else "N/A"
+    isin          = company.get("isin_code", "")
     security_type = (company.get("security_type") or "EQUITY").upper()
-    story.append(P(f"BENPOS AS ON {rd_str} FOR {security_type} ISIN: {isin}", s_red_c))
+    sec_display   = security_type.replace("SHARES", "shares")
+    story.append(P(f"BENPOS as on {rd_str} for {sec_display} ISIN: {isin}", s_red_c))
     story.append(SP(10))
 
     # Beneficiary table
@@ -244,7 +243,6 @@ def generate_benpos_pdf(
             P(f"{pledge:,}",                      s_right),
         ])
 
-    # Total row
     rows.append([
         P("", s_cell), P("", s_cell), P("", s_cell),
         P("Total Securities", s_tot_l),
@@ -265,31 +263,66 @@ def generate_benpos_pdf(
         ("FONT",       (0, 0),  (-1, 0),      "Helvetica-Bold", 10),
         ("FONT",       (3, -1), (3, -1),      "Helvetica-Bold", 10),
         ("FONT",       (5, -1), (6, -1),      "Helvetica-Bold", 10),
+        ("GRID",       (0, 0),  (-1, -1),     1.2, BLACK),
     ))
     story.append(tbl)
     story.append(SP(12))
 
-    # Footer text — exactly as in template
+    # Important Notes
+    story.append(P("<b><font color='#C00000'>Important Notes: -</font></b>", s_body))
+    story.append(SP(4))
     story.append(P(
-        "In case of any discrepancy in the above report, kindly contact us immediately "
-        "at Ph: 9205234407 or via email at harmilaprta@gmail.com.",
+        "This report is prepared based on the Beneficiary reports shared by the Depository "
+        "and helps the company to update records with other authorities. However, the company "
+        "must consider the physical holding / further issuance of securities (if any) and match "
+        "the same with internal company records when filing details with any authority.",
+        s_just,
+    ))
+    story.append(SP(4))
+    story.append(P(
+        "Beneficiary Position is attached with report only in case of Demat / Electronic Holdings",
         s_body,
     ))
-    story.append(SP(6))
+    story.append(SP(4))
     story.append(P(
-        "<b>Note:</b><br/>"
-        "&#8226; This report has been generated as per the request of the Issuer Client "
-        "Company. In case of any queries, please feel free to contact us.",
+        "This report should be checked and verified by the Company Secretary before filing with any authority.",
+        s_just,
+    ))
+    story.append(SP(4))
+    story.append(P(
+        "\"<b>Harmilap Share Transfer Agents</b>\" shall not be held responsible, directly or indirectly, "
+        "for any false, misleading, or misrepresented information submitted by the company to any authority "
+        "without verifying the same with the company&#8217;s internal records.",
+        s_just,
+    ))
+    story.append(SP(10))
+    story.append(P(
+        "In case of any discrepancy in the above report, kindly contact us immediately at "
+        "Ph: 9205234407 or email harmilaprta@gmail.com",
         s_body,
     ))
     story.append(SP(14))
-    story.append(P("Thanking you,", s_body))
+    story.append(P("Thanking You", s_body))
     story.append(SP(4))
-    story.append(P("Back Office", s_bold))
-    story.append(P("Harmilap Share Transfer Agents", s_red_b))
-    story.append(P("Ph: 9205234407 / 8929835991", s_bold))
+    story.append(P("For <b>HARMILAP SHARE TRANSFER AGENTS</b>", s_body))
+    story.append(SP(30))
 
-    # Use the same large white letterhead as the Reconciliation Report
+    stamp_w = 0.75 * inch
+    stamp_h = stamp_w * 53 / 72
+    stamp_tbl = Table(
+        [[Image(A_STAMP, width=stamp_w, height=stamp_h), P("", s_body)]],
+        colWidths=[stamp_w + 6, CW - stamp_w - 6],
+    )
+    stamp_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(stamp_tbl)
+    story.append(P("<b>Authorised Signatory</b>", s_body))
+
     return _build(story, A_REPORT_HDR, _RH)
 
 
