@@ -14,11 +14,43 @@ from app.routes import auth, users, companies, beneficiaries, reports, emails
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Schema migrations for columns added after initial deploy
+        # Schema migrations for columns added / widened after initial deploy
         await conn.execute(
             text(
                 "ALTER TABLE beneficiaries "
                 "ADD COLUMN IF NOT EXISTS depository VARCHAR(10) NOT NULL DEFAULT 'NSDL'"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE beneficiaries "
+                "ALTER COLUMN dp_id TYPE VARCHAR(16),"
+                "ALTER COLUMN first_holder_name TYPE TEXT,"
+                "ALTER COLUMN first_holder_father_husband_name TYPE TEXT,"
+                "ALTER COLUMN first_holder_email TYPE TEXT,"
+                "ALTER COLUMN second_holder_name TYPE TEXT,"
+                "ALTER COLUMN second_holder_father_husband_name TYPE TEXT,"
+                "ALTER COLUMN second_holder_email TYPE TEXT,"
+                "ALTER COLUMN third_holder_name TYPE TEXT,"
+                "ALTER COLUMN third_holder_father_husband_name TYPE TEXT,"
+                "ALTER COLUMN third_holder_email TYPE TEXT,"
+                "ALTER COLUMN address_line1 TYPE TEXT,"
+                "ALTER COLUMN address_line2 TYPE TEXT,"
+                "ALTER COLUMN address_line3 TYPE TEXT,"
+                "ALTER COLUMN address_line4 TYPE TEXT,"
+                "ALTER COLUMN nominee_guardian_name TYPE TEXT,"
+                "ALTER COLUMN nominee_address_line1 TYPE TEXT,"
+                "ALTER COLUMN nominee_address_line2 TYPE TEXT,"
+                "ALTER COLUMN nominee_address_line3 TYPE TEXT,"
+                "ALTER COLUMN nominee_address_line4 TYPE TEXT,"
+                "ALTER COLUMN bank_name_branch TYPE TEXT,"
+                "ALTER COLUMN bank_address_line1 TYPE TEXT,"
+                "ALTER COLUMN bank_address_line2 TYPE TEXT,"
+                "ALTER COLUMN bank_address_line3 TYPE TEXT,"
+                "ALTER COLUMN bank_address_line4 TYPE TEXT,"
+                "ALTER COLUMN rbi_reference_number TYPE TEXT,"
+                "ALTER COLUMN sebi_registration_number TYPE TEXT,"
+                "ALTER COLUMN tax_deduction_status TYPE TEXT"
             )
         )
     yield

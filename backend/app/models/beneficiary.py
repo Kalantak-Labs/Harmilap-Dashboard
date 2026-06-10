@@ -31,65 +31,65 @@ class Beneficiary(Base):
     beneficiary_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # First holder
-    first_holder_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
-    first_holder_father_husband_name: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    first_holder_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_holder_father_husband_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     first_holder_pan: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
-    first_holder_email: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    first_holder_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     first_holder_mapin_id: Mapped[str | None] = mapped_column(String(9), nullable=True)
 
     # Second holder
-    second_holder_name: Mapped[str | None] = mapped_column(String(45), nullable=True)
-    second_holder_father_husband_name: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    second_holder_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    second_holder_father_husband_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     second_holder_pan: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    second_holder_email: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    second_holder_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     second_holder_mapin_id: Mapped[str | None] = mapped_column(String(9), nullable=True)
 
     # Third holder
-    third_holder_name: Mapped[str | None] = mapped_column(String(45), nullable=True)
-    third_holder_father_husband_name: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    third_holder_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    third_holder_father_husband_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     third_holder_pan: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    third_holder_email: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    third_holder_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     third_holder_mapin_id: Mapped[str | None] = mapped_column(String(9), nullable=True)
 
     # Address
-    address_line1: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    address_line2: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    address_line3: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    address_line4: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address_line3: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address_line4: Mapped[str | None] = mapped_column(Text, nullable=True)
     pin_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(24), nullable=True)
     fax: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
     # Nominee / Guardian
     nominee_guardian_indicator: Mapped[str | None] = mapped_column(String(1), nullable=True)
-    nominee_guardian_name: Mapped[str | None] = mapped_column(String(45), nullable=True)
-    nominee_address_line1: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    nominee_address_line2: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    nominee_address_line3: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    nominee_address_line4: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    nominee_guardian_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nominee_address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nominee_address_line2: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nominee_address_line3: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nominee_address_line4: Mapped[str | None] = mapped_column(Text, nullable=True)
     nominee_pin_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     dob_minor: Mapped[date | None] = mapped_column(Date, nullable=True)
     minor_indicator: Mapped[str | None] = mapped_column(String(1), nullable=True)
 
     # Bank
     bank_account_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    bank_name_branch: Mapped[str | None] = mapped_column(String(135), nullable=True)
-    bank_address_line1: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    bank_address_line2: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    bank_address_line3: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    bank_address_line4: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    bank_name_branch: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bank_address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bank_address_line2: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bank_address_line3: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bank_address_line4: Mapped[str | None] = mapped_column(Text, nullable=True)
     bank_pin_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     micr_code: Mapped[str | None] = mapped_column(String(9), nullable=True)
     ifsc: Mapped[str | None] = mapped_column(String(11), nullable=True)
     bank_account_type: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # NRI
-    rbi_reference_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rbi_reference_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     rbi_approval_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Registration
-    sebi_registration_number: Mapped[str | None] = mapped_column(String(24), nullable=True)
-    tax_deduction_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sebi_registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tax_deduction_status: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Positions (from 02 record)
     free_positions: Mapped[float | None] = mapped_column(Numeric(18, 3), nullable=True)
