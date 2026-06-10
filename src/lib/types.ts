@@ -172,3 +172,48 @@ export interface CompanyStats {
   beneficiary_count: number;
   invoice_count: number;
 }
+
+export interface EmailSettings {
+  id: number;
+  smtp_host: string | null;
+  smtp_port: number;
+  smtp_username: string | null;
+  smtp_password: string | null;
+  smtp_use_tls: boolean;
+  sender_name: string | null;
+  sender_email: string | null;
+  is_configured: boolean;
+}
+
+export type EmailType = "invoice" | "benpos" | "reconciliation";
+
+export interface EmailTemplate {
+  id: string;
+  email_type: EmailType;
+  name: string;
+  subject: string;
+  body: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateVariable {
+  key: string;
+  label: string;
+}
+
+export interface SendResultItem {
+  company_id: string;
+  company_name: string | null;
+  emails: string[];
+  status: "sent" | "failed" | "no_email";
+  error?: string;
+}
+
+export interface SendResponse {
+  sent: number;
+  failed: number;
+  no_email: number;
+  results: SendResultItem[];
+}

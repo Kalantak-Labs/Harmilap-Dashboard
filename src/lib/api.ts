@@ -166,6 +166,44 @@ export const api = {
     },
   },
 
+  emails: {
+    getSettings: () => request<import("./types").EmailSettings>("/emails/settings"),
+    updateSettings: (body: object) =>
+      request<import("./types").EmailSettings>("/emails/settings", { method: "PUT", body: JSON.stringify(body) }),
+    testConnection: () =>
+      request<{ ok: boolean; message: string }>("/emails/settings/test", { method: "POST" }),
+
+    listTemplates: (emailType?: string) => {
+      const q = emailType ? `?email_type=${emailType}` : "";
+      return request<import("./types").EmailTemplate[]>(`/emails/templates${q}`);
+    },
+    createTemplate: (body: object) =>
+      request<import("./types").EmailTemplate>("/emails/templates", { method: "POST", body: JSON.stringify(body) }),
+    updateTemplate: (id: string, body: object) =>
+      request<import("./types").EmailTemplate>(`/emails/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteTemplate: (id: string) =>
+      request<void>(`/emails/templates/${id}`, { method: "DELETE" }),
+
+    getVariables: () =>
+      request<Record<string, import("./types").TemplateVariable[]>>("/emails/variables"),
+
+    previewTemplate: (
+      tid: string,
+      companyId: string,
+      params?: { report_date?: string; ref_prefix?: string }
+    ) => {
+      const qs = new URLSearchParams({ company_id: companyId });
+      if (params?.report_date) qs.set("report_date", params.report_date);
+      if (params?.ref_prefix)  qs.set("ref_prefix", params.ref_prefix);
+      return request<{ subject: string; body: string; to: string[] }>(
+        `/emails/preview/${tid}?${qs.toString()}`
+      );
+    },
+
+    send: (body: object) =>
+      request<import("./types").SendResponse>("/emails/send", { method: "POST", body: JSON.stringify(body) }),
+  },
+
   companies: {
     list: (params?: Record<string, string | number | boolean | undefined>) => {
       const qs = new URLSearchParams();
