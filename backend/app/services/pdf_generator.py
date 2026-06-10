@@ -16,6 +16,7 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -29,6 +30,7 @@ from reportlab.platypus import (
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED       = HexColor("#C00000")
+BLUE      = HexColor("#1F4E79")
 GRAY_MID  = HexColor("#BFBFBF")
 GRAY_LITE = HexColor("#D9D9D9")
 PEACH     = HexColor("#FCE4D6")
@@ -177,6 +179,68 @@ def _addr(company: dict, sep: str = ", ") -> str:
     ]))
 
 
+# ── BENPOS helpers ────────────────────────────────────────────────────────────
+
+def _watermark_data(hdr_path: str) -> Optional[tuple]:
+    """Crop left logo from header, reduce opacity. Returns (png_bytes, w_px, h_px) or None."""
+    try:
+        from PIL import Image as PILImage
+        img = PILImage.open(hdr_path).convert("RGBA")
+        w, h = img.size
+        crop_w = int(w * 0.22)
+        logo = img.crop((0, 0, crop_w, h))
+        r, g, b, a = logo.split()
+        a = a.point(lambda v: int(v * 0.12))
+        out = io.BytesIO()
+        PILImage.merge("RGBA", (r, g, b, a)).save(out, "PNG")
+        return (out.getvalue(), crop_w, h)
+    except Exception:
+        return None
+
+
+_BENPOS_EXTRA_BOTTOM = 14   # pts reserved below footer strip for the contact line
+
+
+def _build_benpos(story: list, wm: Optional[tuple]) -> bytes:
+    buf = io.BytesIO()
+    top    = MARGIN + _RH + 5
+    bottom = _BOTTOM + _BENPOS_EXTRA_BOTTOM
+
+    def _draw(canvas, _doc):
+        canvas.saveState()
+        # Header
+        canvas.drawImage(A_REPORT_HDR, MARGIN, PAGE_H - MARGIN - _RH,
+                         width=CW, height=_RH, preserveAspectRatio=False, mask="auto")
+        # Footer strip shifted up to make room for contact text
+        canvas.drawImage(A_FOOTER, MARGIN, MARGIN + _BENPOS_EXTRA_BOTTOM,
+                         width=CW, height=_FH, preserveAspectRatio=False, mask="auto")
+        # Contact line in red below footer strip
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(RED)
+        canvas.drawCentredString(
+            PAGE_W / 2, MARGIN + 2,
+            "Email Id: harmilaprta@gmail.com  |  "
+            "Contact No: +91-8929835991 / 9310931755 / 9205234407",
+        )
+        # Watermark (centered, semi-transparent)
+        if wm:
+            wm_bytes, wm_w_px, wm_h_px = wm
+            reader = ImageReader(io.BytesIO(wm_bytes))
+            wm_w = 3.5 * inch
+            wm_h = wm_w * (wm_h_px / wm_w_px)
+            canvas.drawImage(reader,
+                             (PAGE_W - wm_w) / 2, (PAGE_H - wm_h) / 2,
+                             width=wm_w, height=wm_h, mask="auto")
+        canvas.restoreState()
+
+    frame = Frame(MARGIN, bottom, CW, PAGE_H - top - bottom,
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    tpl = PageTemplate(id="main", frames=[frame], onPage=_draw)
+    doc = BaseDocTemplate(buf, pagesize=A4, pageTemplates=[tpl])
+    doc.build(story)
+    return buf.getvalue()
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 1. BENPOS — Beneficiary Position
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -184,14 +248,19 @@ def generate_benpos_pdf(
     company: dict,
     beneficiaries: list[dict],
     record_date: Optional[date],
+    ref_no: Optional[str] = None,
 ) -> bytes:
-    s_bold  = _s("bb", "Helvetica-Bold", 11, 15)
-    s_body  = _s("b",  size=11, leading=15)
-    s_just  = _s("j",  size=11, leading=15, align=TA_JUSTIFY)
-    s_red_c = _s("rc", "Helvetica-Bold", 11, 15, color=RED, align=TA_CENTER)
-    s_hdr   = _s("th", "Helvetica-Bold", 10, 13)
-    s_cell  = _s("tc", size=10, leading=13)
-    s_right = _s("tr", size=10, leading=13, align=TA_RIGHT)
+    s_bold  = _s("bb",  "Helvetica-Bold", 11, 15)
+    s_body  = _s("b",   size=11, leading=15)
+    s_just  = _s("j",   size=11, leading=15, align=TA_JUSTIFY)
+    s_red_c = _s("rc",  "Helvetica-Bold", 11, 15, color=RED, align=TA_CENTER)
+    s_eor   = _s("eor", "Helvetica-Bold", 11, 15, align=TA_CENTER)
+    s_blue  = _s("bl",  "Helvetica-Bold", 11, 15, color=BLUE)
+    s_red_b = _s("rb",  "Helvetica-Bold", 11, 15, color=RED)
+    s_muted = _s("mt",  size=9,  leading=12, color=DARK)
+    s_hdr   = _s("th",  "Helvetica-Bold", 10, 13)
+    s_cell  = _s("tc",  size=10, leading=13)
+    s_right = _s("tr",  size=10, leading=13, align=TA_RIGHT)
     s_tot_l = _s("ttl", "Helvetica-Bold", 10, 13)
     s_tot_r = _s("ttr", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
 
@@ -199,11 +268,13 @@ def generate_benpos_pdf(
 
     addr = _addr(company)
     name = (company.get("company_name") or "").upper()
+    rta  = company.get("rta_code") or ""
 
+    # Company / address block
     info = Table(
         [
-            [P("Company Name", s_bold), P(":", s_bold), P(name, s_bold)],
-            [P("Regd. / Billing Address", s_bold), P(":", s_bold), P(addr.upper(), s_bold)],
+            [P("Company Name",           s_bold), P(":", s_bold), P(name,         s_bold)],
+            [P("Regd. / Billing Address",s_bold), P(":", s_bold), P(addr.upper(), s_bold)],
         ],
         colWidths=[CW * 0.36, 12, CW * 0.62],
     )
@@ -211,6 +282,21 @@ def generate_benpos_pdf(
     story.append(info)
     story.append(SP(8))
 
+    # Reference number + generated date row
+    rd_for_ref   = record_date.strftime("%d%m%Y") if record_date else "NA"
+    auto_ref     = f"{rta}/NSDL/BENPOS/{rd_for_ref}"
+    effective_ref = ref_no or auto_ref
+    ref_row = Table(
+        [[P(f"<b>Ref No:</b> {effective_ref}", s_body),
+          P(f"<b>Date:</b> {date.today().strftime('%d.%m.%Y')}",
+            _s("dr", "Helvetica-Bold", 11, 15, align=TA_RIGHT))]],
+        colWidths=[CW * 0.65, CW * 0.35],
+    )
+    ref_row.setStyle(_no_border_ts())
+    story.append(ref_row)
+    story.append(SP(14))
+
+    # BENPOS title
     rd_str        = record_date.strftime("%d.%m.%Y") if record_date else "N/A"
     isin          = company.get("isin_code", "")
     security_type = (company.get("security_type") or "EQUITY").upper()
@@ -229,16 +315,16 @@ def generate_benpos_pdf(
 
     total_free = total_pledge = 0
     for i, b in enumerate(beneficiaries, 1):
-        free   = b.get("free_positions") or 0
-        pledge = b.get("pledged_positions") or 0
+        free   = int(b.get("free_positions")   or 0)
+        pledge = int(b.get("pledged_positions") or 0)
         total_free   += free
         total_pledge += pledge
         rows.append([
-            P(str(i),                              s_right),
-            P(b.get("dp_id") or "",               s_cell),
-            P(b.get("client_id") or "",           s_right),
+            P(str(i),                             s_right),
+            P(b.get("dp_id")             or "",   s_cell),
+            P(b.get("client_id")         or "",   s_right),
             P(b.get("first_holder_name") or "",   s_cell),
-            P(b.get("first_holder_pan") or "",    s_cell),
+            P(b.get("first_holder_pan")  or "",   s_cell),
             P(f"{free:,}",                        s_right),
             P(f"{pledge:,}",                      s_right),
         ])
@@ -247,8 +333,8 @@ def generate_benpos_pdf(
         P("", s_cell), P("", s_cell), P("", s_cell),
         P("Total Securities", s_tot_l),
         P("", s_cell),
-        P(f"{total_free:,}",   s_tot_r),
-        P(f"{total_pledge:,}", s_tot_r),
+        P(f"{int(total_free):,}",   s_tot_r),
+        P(f"{int(total_pledge):,}", s_tot_r),
     ])
 
     n = len(rows)
@@ -266,7 +352,11 @@ def generate_benpos_pdf(
         ("GRID",       (0, 0),  (-1, -1),     1.2, BLACK),
     ))
     story.append(tbl)
-    story.append(SP(12))
+    story.append(SP(14))
+
+    # End-of-report marker
+    story.append(P("*** END OF REPORT ***", s_eor))
+    story.append(SP(14))
 
     # Important Notes
     story.append(P("<b><font color='#C00000'>Important Notes: -</font></b>", s_body))
@@ -283,29 +373,25 @@ def generate_benpos_pdf(
         "our notice immediately at +91 9205234407 or harmilaprta@gmail.com.",
         s_just,
     ))
-    story.append(SP(14))
+    story.append(SP(16))
+
+    # Closing
     story.append(P("Thanking You", s_body))
     story.append(SP(4))
-    story.append(P("For <b>HARMILAP SHARE TRANSFER AGENTS</b>", s_body))
-    story.append(SP(30))
+    story.append(P("REPORTING DESK", s_blue))
+    story.append(P("HARMILAP SHARE TRANSFER AGENTS", s_red_b))
+    story.append(SP(10))
 
-    stamp_w = 0.75 * inch
-    stamp_h = stamp_w * 53 / 72
-    stamp_tbl = Table(
-        [[Image(A_STAMP, width=stamp_w, height=stamp_h), P("", s_body)]],
-        colWidths=[stamp_w + 6, CW - stamp_w - 6],
-    )
-    stamp_tbl.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(stamp_tbl)
-    story.append(P("<b>Authorised Signatory</b>", s_body))
+    # System-generated remark + place + date
+    story.append(P(
+        "This is a system generated report, no signature is required.",
+        s_muted,
+    ))
+    story.append(SP(6))
+    story.append(P(f"Place: New Delhi", s_body))
+    story.append(P(f"Date: {date.today().strftime('%d.%m.%Y')}", s_body))
 
-    return _build(story, A_REPORT_HDR, _RH)
+    return _build_benpos(story, _watermark_data(A_REPORT_HDR))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
