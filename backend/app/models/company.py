@@ -16,7 +16,8 @@ class Company(Base):
     # Core identifiers
     isin_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     company_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    rta_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    nsdl_rta_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    cdsl_rta_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Contact arrays
     email_ids: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)

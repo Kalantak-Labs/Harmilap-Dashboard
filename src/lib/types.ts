@@ -16,7 +16,8 @@ export interface Company {
   id: string;
   isin_code: string;
   company_name: string | null;
-  rta_code: string | null;
+  nsdl_rta_code: string | null;
+  cdsl_rta_code: string | null;
   email_ids: string[];
   contact_numbers: string[];
   authorized_person_name: string | null;
@@ -48,7 +49,8 @@ export interface CompanyListItem {
   id: string;
   isin_code: string;
   company_name: string | null;
-  rta_code: string | null;
+  nsdl_rta_code: string | null;
+  cdsl_rta_code: string | null;
   security_type: string | null;
   total_shares: number | null;
   has_nsdl_shares: boolean;

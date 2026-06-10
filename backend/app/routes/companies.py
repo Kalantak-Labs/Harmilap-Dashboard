@@ -28,7 +28,8 @@ def _apply_search(query, search: str | None):
         or_(
             Company.company_name.ilike(term),
             Company.isin_code.ilike(term),
-            Company.rta_code.ilike(term),
+            Company.nsdl_rta_code.ilike(term),
+            Company.cdsl_rta_code.ilike(term),
             Company.pan_number.ilike(term),
         )
     )
@@ -74,7 +75,8 @@ async def count_companies(
             or_(
                 Company.company_name.ilike(term),
                 Company.isin_code.ilike(term),
-                Company.rta_code.ilike(term),
+                Company.nsdl_rta_code.ilike(term),
+            Company.cdsl_rta_code.ilike(term),
                 Company.pan_number.ilike(term),
             )
         )
@@ -114,7 +116,7 @@ async def export_companies(
         rows.append({
             col: getattr(c, col)
             for col in [
-                "company_name", "isin_code", "rta_code", "email_ids", "contact_numbers",
+                "company_name", "isin_code", "nsdl_rta_code", "cdsl_rta_code", "email_ids", "contact_numbers",
                 "authorized_person_name", "authorized_person_designation",
                 "gst_number", "tan_number", "pan_number",
                 "reg_address_line1", "reg_address_line2", "reg_address_line3", "reg_address_line4",

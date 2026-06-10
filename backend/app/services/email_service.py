@@ -27,7 +27,9 @@ TEMPLATE_VARIABLES: dict[str, list[dict]] = {
     "invoice": [
         {"key": "company_name",                  "label": "Company Name"},
         {"key": "isin_code",                     "label": "ISIN Code"},
-        {"key": "rta_code",                      "label": "RTA Code"},
+        {"key": "nsdl_rta_code",                 "label": "NSDL RTA Code"},
+        {"key": "cdsl_rta_code",                 "label": "CDSL RTA Code"},
+        {"key": "rta_code",                      "label": "RTA Code (legacy → NSDL)"},
         {"key": "authorized_person_name",        "label": "Authorized Person"},
         {"key": "authorized_person_designation", "label": "Designation"},
         {"key": "invoice_no",                    "label": "Invoice Number"},
@@ -37,7 +39,9 @@ TEMPLATE_VARIABLES: dict[str, list[dict]] = {
     "benpos": [
         {"key": "company_name",                  "label": "Company Name"},
         {"key": "isin_code",                     "label": "ISIN Code"},
-        {"key": "rta_code",                      "label": "RTA Code"},
+        {"key": "nsdl_rta_code",                 "label": "NSDL RTA Code"},
+        {"key": "cdsl_rta_code",                 "label": "CDSL RTA Code"},
+        {"key": "rta_code",                      "label": "RTA Code (legacy → NSDL)"},
         {"key": "authorized_person_name",        "label": "Authorized Person"},
         {"key": "authorized_person_designation", "label": "Designation"},
         {"key": "record_date",                   "label": "Record Date"},
@@ -46,7 +50,9 @@ TEMPLATE_VARIABLES: dict[str, list[dict]] = {
     "reconciliation": [
         {"key": "company_name",                  "label": "Company Name"},
         {"key": "isin_code",                     "label": "ISIN Code"},
-        {"key": "rta_code",                      "label": "RTA Code"},
+        {"key": "nsdl_rta_code",                 "label": "NSDL RTA Code"},
+        {"key": "cdsl_rta_code",                 "label": "CDSL RTA Code"},
+        {"key": "rta_code",                      "label": "RTA Code (legacy → NSDL)"},
         {"key": "authorized_person_name",        "label": "Authorized Person"},
         {"key": "authorized_person_designation", "label": "Designation"},
         {"key": "record_date",                   "label": "Record Date"},

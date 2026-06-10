@@ -193,7 +193,8 @@ export default function CompaniesPage() {
               <tr>
                 <th>Company Name</th>
                 <th>ISIN Code</th>
-                <th>RTA Code</th>
+                <th>NSDL RTA</th>
+                <th>CDSL RTA</th>
                 <th>Security Type</th>
                 <th style={{ textAlign: "right" }}>Total Shares</th>
                 <th>NSDL</th>
@@ -203,9 +204,9 @@ export default function CompaniesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8}><div className="spinner-center"><span className="spinner" /></div></td></tr>
+                <tr><td colSpan={9}><div className="spinner-center"><span className="spinner" /></div></td></tr>
               ) : companies.length === 0 ? (
-                <tr><td colSpan={8}>
+                <tr><td colSpan={9}>
                   <div className="empty-state">
                     <Building2 size={32} />
                     <div>No companies found</div>
@@ -216,7 +217,8 @@ export default function CompaniesPage() {
                 <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => window.location.href = `/dashboard/companies/${c.id}`}>
                   <td style={{ fontWeight: 500 }}>{c.company_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td><code style={{ fontSize: 12, background: "var(--bg)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>{c.isin_code}</code></td>
-                  <td>{c.rta_code ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                  <td style={{ fontSize: 12 }}>{c.nsdl_rta_code ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                  <td style={{ fontSize: 12 }}>{c.cdsl_rta_code ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td>{c.security_type ? <span className="badge badge-gray">{c.security_type}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.total_shares?.toLocaleString() ?? "—"}</td>
                   <td>{c.has_nsdl_shares ? <span className="badge badge-green">Yes</span> : <span className="badge badge-gray">No</span>}</td>

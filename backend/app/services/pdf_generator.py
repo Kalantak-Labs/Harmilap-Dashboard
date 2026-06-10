@@ -266,7 +266,7 @@ def generate_benpos_pdf(
 
     addr = _addr(company)
     name = (company.get("company_name") or "").upper()
-    rta  = company.get("rta_code") or ""
+    rta  = company.get("nsdl_rta_code") or ""
 
     # Company / address block
     info = Table(
@@ -414,7 +414,7 @@ def generate_report_pdf(
     rd       = record_date or today
     rd_long  = _date_long(rd)
     fy       = current_fy(rd)
-    rta      = company.get("rta_code") or ""
+    rta      = company.get("nsdl_rta_code") or ""
 
     if ref_prefix:
         ref_no = f"{ref_prefix}/RTAN{rta}"

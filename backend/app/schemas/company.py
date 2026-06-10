@@ -14,7 +14,8 @@ def _non_negative(v: int | None) -> int | None:
 class CompanyBase(BaseModel):
     company_name: str | None = None
     isin_code: str
-    rta_code: str | None = None
+    nsdl_rta_code: str | None = None
+    cdsl_rta_code: str | None = None
     email_ids: list[str] = []
     contact_numbers: list[str] = []
     authorized_person_name: str | None = None
@@ -59,7 +60,8 @@ class CompanyCreate(CompanyBase):
 
 class CompanyUpdate(BaseModel):
     company_name: str | None = None
-    rta_code: str | None = None
+    nsdl_rta_code: str | None = None
+    cdsl_rta_code: str | None = None
     email_ids: list[str] | None = None
     contact_numbers: list[str] | None = None
     authorized_person_name: str | None = None
@@ -102,7 +104,8 @@ class CompanyListOut(BaseModel):
     id: uuid.UUID
     isin_code: str
     company_name: str | None
-    rta_code: str | None
+    nsdl_rta_code: str | None
+    cdsl_rta_code: str | None
     security_type: str | None
     total_shares: int | None
     has_nsdl_shares: bool

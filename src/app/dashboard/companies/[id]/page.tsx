@@ -149,7 +149,8 @@ export default function CompanyDetailPage() {
             <h2>{company.company_name ?? company.isin_code}</h2>
             <div style={{ color: "var(--text-secondary)", fontSize: 12, marginTop: 1 }}>
               ISIN: {company.isin_code}
-              {company.rta_code && ` · RTA: ${company.rta_code}`}
+              {company.nsdl_rta_code && ` · NSDL RTA: ${company.nsdl_rta_code}`}
+              {company.cdsl_rta_code && ` · CDSL RTA: ${company.cdsl_rta_code}`}
             </div>
           </div>
         </div>
@@ -183,7 +184,8 @@ export default function CompanyDetailPage() {
           <div className="detail-section-title">Core Information</div>
           <Field label="ISIN Code" value={<code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.isin_code}</code>} />
           <Field label="Company Name" value={editing ? inp("company_name") : company.company_name} />
-          <Field label="RTA Code" value={editing ? inp("rta_code") : company.rta_code} />
+          <Field label="NSDL RTA Code" value={editing ? inp("nsdl_rta_code") : company.nsdl_rta_code} />
+          <Field label="CDSL RTA Code" value={editing ? inp("cdsl_rta_code") : company.cdsl_rta_code} />
           <Field label="Security Type" value={editing ? inp("security_type") : company.security_type ? <span className="badge badge-gray">{company.security_type}</span> : null} />
         </div>
 

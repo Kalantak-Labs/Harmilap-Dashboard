@@ -26,7 +26,9 @@ from openpyxl.utils import get_column_letter
 COLUMN_MAP: dict[str, str] = {
     "Company Name": "company_name",
     "ISIN Code": "isin_code",
-    "RTA Code": "rta_code",
+    "RTA Code": "nsdl_rta_code",
+    "NSDL RTA Code": "nsdl_rta_code",
+    "CDSL RTA Code": "cdsl_rta_code",
     "Authorized Person name": "authorized_person_name",
     "Designation of Authorized Person": "authorized_person_designation",
     "GST number": "gst_number",
@@ -53,7 +55,7 @@ INT_FIELDS = {"total_shares", "nsdl_shares", "cdsl_shares", "physical_shares"}
 
 # Columns before email/phone in export
 EXPORT_COLUMNS_PRE = [
-    "company_name", "isin_code", "rta_code",
+    "company_name", "isin_code", "nsdl_rta_code", "cdsl_rta_code",
 ]
 # Columns after email/phone in export
 EXPORT_COLUMNS_POST = [

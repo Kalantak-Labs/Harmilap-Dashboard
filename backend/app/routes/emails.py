@@ -57,7 +57,7 @@ async def _next_inv_no(company: Company, db: AsyncSession) -> str:
         .where(GeneratedInvoice.company_id == company.id)
         .where(GeneratedInvoice.fiscal_year == fy)
     )).scalar() or 0) + 1
-    rta = company.rta_code or ""
+    rta = company.nsdl_rta_code or ""
     inv_no = f"RTAN{rta}/{seq}"
     db.add(GeneratedInvoice(company_id=company.id, fiscal_year=fy, seq_no=seq, invoice_no=inv_no))
     await db.commit()
@@ -77,11 +77,13 @@ def _build_context(company: Company, email_type: str, record_date: Optional[date
                    ref_prefix: Optional[str] = None,
                    inv_no: Optional[str] = None) -> dict:
     today = date.today()
-    rta = company.rta_code or ""
+    rta = company.nsdl_rta_code or ""
     ctx: dict = {
         "company_name":                  company.company_name or "",
         "isin_code":                     company.isin_code or "",
-        "rta_code":                      rta,
+        "nsdl_rta_code":                 company.nsdl_rta_code or "",
+        "cdsl_rta_code":                 company.cdsl_rta_code or "",
+        "rta_code":                      rta,  # legacy alias → nsdl_rta_code
         "authorized_person_name":        company.authorized_person_name or "",
         "authorized_person_designation": company.authorized_person_designation or "",
         "today":                         today.strftime("%d %B %Y"),

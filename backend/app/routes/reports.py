@@ -92,7 +92,7 @@ async def _next_invoice_no(company: Company, db: AsyncSession) -> str:
         .where(GeneratedInvoice.fiscal_year == fy)
     )
     seq = (result.scalar() or 0) + 1
-    rta = company.rta_code or ""
+    rta = company.nsdl_rta_code or ""
     inv_no = f"RTAN{rta}/{seq}"
     db.add(GeneratedInvoice(
         company_id=company.id,

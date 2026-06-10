@@ -14,7 +14,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   const [loading, setLoading] = useState(false);
   const [secAutoFilled, setSecAutoFilled] = useState(false);
   const [form, setForm] = useState({
-    isin_code: "", company_name: "", rta_code: "",
+    isin_code: "", company_name: "", nsdl_rta_code: "", cdsl_rta_code: "",
     email_ids: [] as string[], contact_numbers: [] as string[],
     authorized_person_name: "", authorized_person_designation: "",
     gst_number: "", tan_number: "", pan_number: "",
@@ -100,8 +100,12 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <input className="input" value={form.company_name} onChange={(e) => set("company_name", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">RTA Code</label>
-                <input className="input" value={form.rta_code} onChange={(e) => set("rta_code", e.target.value)} />
+                <label className="form-label">NSDL RTA Code</label>
+                <input className="input" value={form.nsdl_rta_code} onChange={(e) => set("nsdl_rta_code", e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CDSL RTA Code</label>
+                <input className="input" value={form.cdsl_rta_code} onChange={(e) => set("cdsl_rta_code", e.target.value)} />
               </div>
               <div className="form-group">
                 <label className="form-label">Security Type</label>

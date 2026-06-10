@@ -14,7 +14,26 @@ from app.routes import auth, users, companies, beneficiaries, reports, emails
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Schema migrations for columns added / widened after initial deploy
+        # companies: split rta_code → nsdl_rta_code + cdsl_rta_code
+        await conn.execute(text(
+            "ALTER TABLE companies "
+            "ADD COLUMN IF NOT EXISTS nsdl_rta_code VARCHAR(50),"
+            "ADD COLUMN IF NOT EXISTS cdsl_rta_code VARCHAR(50)"
+        ))
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='companies' AND column_name='rta_code'
+                ) THEN
+                    UPDATE companies SET nsdl_rta_code = rta_code WHERE nsdl_rta_code IS NULL;
+                    ALTER TABLE companies DROP COLUMN rta_code;
+                END IF;
+            END $$
+        """))
+
+        # beneficiaries: Schema migrations for columns added / widened after initial deploy
         await conn.execute(
             text(
                 "ALTER TABLE beneficiaries "
