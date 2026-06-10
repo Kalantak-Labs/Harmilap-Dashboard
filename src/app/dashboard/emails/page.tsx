@@ -11,6 +11,32 @@ import type {
   SendResponse, SendResultItem, TemplateVariable,
 } from "@/lib/types";
 
+// ── SMTP presets ──────────────────────────────────────────────────────────────
+
+const SMTP_PRESETS: Record<string, { label: string; host: string; port: number; tls: boolean; note: string }> = {
+  outlook: {
+    label: "Outlook / Microsoft 365",
+    host: "smtp.office365.com",
+    port: 587,
+    tls: true,
+    note: "Use your full email address as username. Business M365 accounts may need SMTP AUTH enabled per-user in the Microsoft 365 admin centre (Users → select user → Mail → SMTP AUTH).",
+  },
+  gmail: {
+    label: "Gmail",
+    host: "smtp.gmail.com",
+    port: 587,
+    tls: true,
+    note: "Enable 2-Step Verification on your Google account, then create an App Password (myaccount.google.com → Security → App passwords) and use that as the password here.",
+  },
+  yahoo: {
+    label: "Yahoo Mail",
+    host: "smtp.mail.yahoo.com",
+    port: 587,
+    tls: true,
+    note: "Generate an App Password in your Yahoo account security settings and use it as the password.",
+  },
+};
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS: Record<EmailType, string> = {
@@ -37,6 +63,7 @@ function SettingsSection({ isAdmin }: { isAdmin: boolean }) {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [preset, setPreset] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +123,12 @@ function SettingsSection({ isAdmin }: { isAdmin: boolean }) {
 
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
+  const applyPreset = (key: string) => {
+    setPreset(key);
+    const p = SMTP_PRESETS[key];
+    if (p) setForm((f) => ({ ...f, smtp_host: p.host, smtp_port: p.port, smtp_use_tls: p.tls }));
+  };
+
   return (
     <div className="card" style={{ maxWidth: 600 }}>
       <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -110,6 +143,25 @@ function SettingsSection({ isAdmin }: { isAdmin: boolean }) {
         )}
       </div>
       <form onSubmit={save} style={{ padding: 20 }}>
+        {/* Quick setup presets */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>Quick setup</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {Object.entries(SMTP_PRESETS).map(([key, p]) => (
+              <button key={key} type="button"
+                onClick={() => applyPreset(key)}
+                style={{ fontSize: 12, padding: "4px 12px", borderRadius: 20, border: `1px solid ${preset === key ? "var(--accent)" : "var(--border)"}`, background: preset === key ? "var(--accent)" : "transparent", color: preset === key ? "#fff" : "var(--text-secondary)", cursor: "pointer", transition: "all .15s" }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset && SMTP_PRESETS[preset] && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-secondary)", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "var(--radius-sm)", padding: "8px 10px" }}>
+              ℹ {SMTP_PRESETS[preset].note}
+            </div>
+          )}
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 12, marginBottom: 12 }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label required">SMTP Host</label>

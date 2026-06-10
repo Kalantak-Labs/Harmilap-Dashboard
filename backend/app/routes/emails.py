@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -15,7 +16,7 @@ from app.models.invoice_config import InvoiceConfig, DEFAULT_LINE_ITEMS
 from app.models.generated_invoice import GeneratedInvoice
 from app.models.user import User
 from app.services.email_service import (
-    EMAIL_TYPES, TEMPLATE_VARIABLES, render_template, send_email, test_connection,
+    EMAIL_TYPES, TEMPLATE_VARIABLES, EmailJob, batch_send, render_template, test_connection,
 )
 from app.services.pdf_generator import (
     current_fy, generate_benpos_pdf, generate_invoice_pdf, generate_report_pdf,
@@ -351,15 +352,15 @@ async def send_emails_endpoint(
                  "igst_rate": cfg.igst_rate, "cgst_rate": cfg.cgst_rate,
                  "sgst_rate": cfg.sgst_rate} if cfg else None)
 
-    sent = failed = no_email_count = 0
+    # ── Phase 1 (async): prepare all emails, generate PDFs, allocate invoice nos ──
     results: list[dict] = []
+    jobs: list[EmailJob] = []
 
     for cid in body.company_ids:
         company = await db.get(Company, str(cid))
         if not company:
             results.append({"company_id": str(cid), "company_name": None,
                             "emails": [], "status": "failed", "error": "Company not found"})
-            failed += 1
             continue
 
         to_emails = [e.strip() for e in (company.email_ids or []) if e and "@" in e]
@@ -367,7 +368,6 @@ async def send_emails_endpoint(
             results.append({"company_id": str(cid), "company_name": company.company_name,
                             "emails": [], "status": "no_email",
                             "error": "No email address on file"})
-            no_email_count += 1
             continue
 
         try:
@@ -390,17 +390,34 @@ async def send_emails_endpoint(
             ctx = _build_context(company, body.email_type, rd,
                                  report_date=effective_date, ref_prefix=body.ref_prefix,
                                  inv_no=inv_no)
-            subject  = render_template(tmpl.subject, ctx)
-            html_body = render_template(tmpl.body, ctx)
-
-            await send_email(s, to_emails, subject, html_body, pdf_bytes, filename)
-            results.append({"company_id": str(cid), "company_name": company.company_name,
-                            "emails": to_emails, "status": "sent"})
-            sent += 1
+            jobs.append(EmailJob(
+                company_id=str(cid),
+                company_name=company.company_name,
+                to_emails=to_emails,
+                subject=render_template(tmpl.subject, ctx),
+                body=render_template(tmpl.body, ctx),
+                pdf_bytes=pdf_bytes,
+                filename=filename,
+            ))
 
         except Exception as exc:
             results.append({"company_id": str(cid), "company_name": company.company_name,
-                            "emails": to_emails, "status": "failed", "error": str(exc)})
-            failed += 1
+                            "emails": to_emails, "status": "failed",
+                            "error": f"PDF generation failed: {exc}"})
 
-    return SendResponse(sent=sent, failed=failed, no_email=no_email_count, results=results)
+    # ── Phase 2 (thread): send entire batch over one SMTP connection ──────────
+    if jobs:
+        loop = asyncio.get_running_loop()
+        statuses = await loop.run_in_executor(None, batch_send, s, jobs)
+        for job, err in zip(jobs, statuses):
+            if err is None:
+                results.append({"company_id": job.company_id, "company_name": job.company_name,
+                                 "emails": job.to_emails, "status": "sent"})
+            else:
+                results.append({"company_id": job.company_id, "company_name": job.company_name,
+                                 "emails": job.to_emails, "status": "failed", "error": err})
+
+    sent     = sum(1 for r in results if r["status"] == "sent")
+    failed   = sum(1 for r in results if r["status"] == "failed")
+    no_email = sum(1 for r in results if r["status"] == "no_email")
+    return SendResponse(sent=sent, failed=failed, no_email=no_email, results=results)
