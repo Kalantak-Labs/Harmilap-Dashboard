@@ -198,23 +198,22 @@ def _watermark_data(hdr_path: str) -> Optional[tuple]:
         return None
 
 
-_BENPOS_EXTRA_BOTTOM = 14   # pts reserved below footer strip for the contact line
+_EXTRA_BOTTOM = 14   # pts reserved below footer strip for the contact line
 
 
-def _build_benpos(story: list, wm: Optional[tuple]) -> bytes:
+def _build_full(story: list, hdr_path: str, hdr_h: float) -> bytes:
+    """Build PDF with watermark, extended footer contact line, and custom header."""
+    wm  = _watermark_data(hdr_path)
     buf = io.BytesIO()
-    top    = MARGIN + _RH + 5
-    bottom = _BOTTOM + _BENPOS_EXTRA_BOTTOM
+    top    = MARGIN + hdr_h + 5
+    bottom = _BOTTOM + _EXTRA_BOTTOM
 
     def _draw(canvas, _doc):
         canvas.saveState()
-        # Header
-        canvas.drawImage(A_REPORT_HDR, MARGIN, PAGE_H - MARGIN - _RH,
-                         width=CW, height=_RH, preserveAspectRatio=False, mask="auto")
-        # Footer strip shifted up to make room for contact text
-        canvas.drawImage(A_FOOTER, MARGIN, MARGIN + _BENPOS_EXTRA_BOTTOM,
+        canvas.drawImage(hdr_path, MARGIN, PAGE_H - MARGIN - hdr_h,
+                         width=CW, height=hdr_h, preserveAspectRatio=False, mask="auto")
+        canvas.drawImage(A_FOOTER, MARGIN, MARGIN + _EXTRA_BOTTOM,
                          width=CW, height=_FH, preserveAspectRatio=False, mask="auto")
-        # Contact line in red below footer strip
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(RED)
         canvas.drawCentredString(
@@ -222,7 +221,6 @@ def _build_benpos(story: list, wm: Optional[tuple]) -> bytes:
             "Email Id: harmilaprta@gmail.com  |  "
             "Contact No: +91-8929835991 / 9310931755 / 9205234407",
         )
-        # Watermark (centered, semi-transparent)
         if wm:
             wm_bytes, wm_w_px, wm_h_px = wm
             reader = ImageReader(io.BytesIO(wm_bytes))
@@ -391,7 +389,7 @@ def generate_benpos_pdf(
     story.append(P(f"Place: New Delhi", s_body))
     story.append(P(f"Date: {date.today().strftime('%d.%m.%Y')}", s_body))
 
-    return _build_benpos(story, _watermark_data(A_REPORT_HDR))
+    return _build_full(story, A_REPORT_HDR, _RH)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -410,7 +408,7 @@ def generate_report_pdf(
     gen_date    : the "Date:" field (report generation date). Defaults to today.
     """
     isin     = company.get("isin_code", "")
-    name     = company.get("company_name") or isin
+    name     = (company.get("company_name") or isin).upper()
     sec_type = (company.get("security_type") or "EQUITY").upper()
     today    = gen_date or date.today()
     rd       = record_date or today
@@ -425,14 +423,16 @@ def generate_report_pdf(
 
     gen_date_str = today.strftime("%d.%m.%Y")
 
-    s_body  = _s("b",  size=10, leading=14)
-    s_bold  = _s("bb", "Helvetica-Bold", 10, 14)
-    s_just  = _s("j",  size=10, leading=14, align=TA_JUSTIFY)
-    s_hdr   = _s("th", "Helvetica-Bold", 10, 13)
-    s_num_b = _s("nb", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
-    s_wh_c  = _s("wc", "Helvetica-Bold", 11, 15, color=WHITE, align=TA_CENTER)
-    s_red_c = _s("rdc","Helvetica-Bold", 10, 14, color=RED)
-    s_stmp  = _s("st", size=10, leading=14)
+    s_body  = _s("b",   size=10, leading=14)
+    s_bold  = _s("bb",  "Helvetica-Bold", 10, 14)
+    s_just  = _s("j",   size=10, leading=14, align=TA_JUSTIFY)
+    s_hdr   = _s("th",  "Helvetica-Bold", 10, 13)
+    s_num_b = _s("nb",  "Helvetica-Bold", 10, 13, align=TA_RIGHT)
+    s_wh_c  = _s("wc",  "Helvetica-Bold", 11, 15, color=WHITE, align=TA_CENTER)
+    s_red_c = _s("rdc", "Helvetica-Bold", 10, 14, color=RED)
+    s_blue  = _s("rbl", "Helvetica-Bold", 10, 14, color=BLUE)
+    s_red_b = _s("rrb", "Helvetica-Bold", 10, 14, color=RED)
+    s_muted = _s("rmt", size=9,  leading=12, color=DARK)
 
     story = []
 
@@ -505,6 +505,7 @@ def generate_report_pdf(
         ("BACKGROUND", (0, 0), (-1, 0), GRAY_LITE),
         ("FONT",       (0, 0), (-1, 0), "Helvetica-Bold", 10),
         ("ALIGN",      (1, 0), (2, -1), "RIGHT"),
+        ("GRID",       (0, 0), (-1, -1), 1.2, BLACK),
     ))
     story.append(share_tbl)
     story.append(SP(12))
@@ -528,7 +529,10 @@ def generate_report_pdf(
         ],
         colWidths=[CW * 0.35, CW * 0.18, CW * 0.18, CW * 0.29],
     )
-    demat.setStyle(_ts(("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 10)))
+    demat.setStyle(_ts(
+        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 10),
+        ("GRID", (0, 0), (-1, -1), 1.2, BLACK),
+    ))
     story.append(demat)
     story.append(SP(12))
 
@@ -570,27 +574,18 @@ def generate_report_pdf(
     story.append(SP(14))
     story.append(P("Thanking You", s_body))
     story.append(SP(4))
-    story.append(P("For <b>HARMILAP SHARE TRANSFER AGENTS</b>", s_body))
-    story.append(SP(30))
+    story.append(P("REPORTING DESK", s_blue))
+    story.append(P("HARMILAP SHARE TRANSFER AGENTS", s_red_b))
+    story.append(SP(10))
+    story.append(P(
+        "This is a system generated report, no signature is required.",
+        s_muted,
+    ))
+    story.append(SP(6))
+    story.append(P(f"Place: New Delhi", s_body))
+    story.append(P(f"Date: {today.strftime('%d.%m.%Y')}", s_body))
 
-    # Stamp + Authorised Signatory
-    stamp_w = 0.75 * inch
-    stamp_h = stamp_w * 53 / 72
-    stamp_tbl = Table(
-        [[Image(A_STAMP, width=stamp_w, height=stamp_h), P("", s_body)]],
-        colWidths=[stamp_w + 6, CW - stamp_w - 6],
-    )
-    stamp_tbl.setStyle(TableStyle([
-        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(stamp_tbl)
-    story.append(P("<b>Authorised Signatory</b>", s_body))
-
-    return _build(story, A_REPORT_HDR, _RH)
+    return _build_full(story, A_REPORT_HDR, _RH)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -612,7 +607,7 @@ def generate_invoice_pdf(
     cgst_rate = float(config.get("cgst_rate", 9.0))
     sgst_rate = float(config.get("sgst_rate", 9.0))
 
-    name  = company.get("company_name") or ""
+    name  = (company.get("company_name") or "").upper()
     addr  = _addr(company)
     gst   = company.get("gst_number") or company.get("pan_number") or "N/A"
     supply_parts = list(filter(None, [company.get("reg_city"), company.get("reg_pin_code")]))
@@ -629,6 +624,7 @@ def generate_invoice_pdf(
     s_smb  = _s("smb","Helvetica-Bold", 8, 10)
     s_smj  = _s("smj", size=8, leading=10, align=TA_JUSTIFY)
     s_sm_r = _s("smr","Helvetica-Bold", 10, 14, color=RED)
+    s_blue = _s("ibl","Helvetica-Bold", 10, 13, color=BLUE)
     s_wh   = _s("wh", "Helvetica-Bold", 9, 12, color=WHITE, align=TA_CENTER)
     s_wh_t = _s("wt", "Helvetica-Bold", 13, 17, color=WHITE, align=TA_CENTER)
     s_wh_s = _s("ws", "Helvetica-Bold", 10, 13, color=WHITE, align=TA_CENTER)
@@ -663,7 +659,7 @@ def generate_invoice_pdf(
     bill = Table(
         [
             [P("<b>Billing (Bill To) &amp; Delivery Address (Ship To):</b>", s_body), P("", s_body)],
-            [P(f"<b>Company / Firm Name &nbsp;&nbsp;&nbsp; {name}</b>", s_body), P("", s_body)],
+            [P(f"<b>Company Name &nbsp;&nbsp;&nbsp; {name}</b>", s_body), P("", s_body)],
             [P(f"<b>Regd. / Billing Address &nbsp;&nbsp; {addr}</b>", s_body), P("", s_body)],
             [P(f"<b>PAN / GST No:</b> {gst}", s_body),
              P(f"<b>PLACE OF SUPPLY:</b> {place}", s_body)],
@@ -671,8 +667,8 @@ def generate_invoice_pdf(
         colWidths=[CW * 0.6, CW * 0.4],
     )
     bill.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 0.5, GRID_CLR),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.3, HexColor("#DDDDDD")),
+        ("BOX",           (0, 0), (-1, -1), 1.2, BLACK),
+        ("INNERGRID",     (0, 0), (-1, -1), 0.8, DARK),
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
@@ -755,6 +751,7 @@ def generate_invoice_pdf(
         ("BACKGROUND", (0, sub_r),     (-1, sub_r),        GRAY_MID),
         ("BACKGROUND", (0, sub_r + 1), (-1, sub_r + 1),   GRAY_MID),
         ("FONT",       (2, -1),        (3, -1),            "Helvetica-Bold", 10),
+        ("GRID",       (0, 0),         (-1, -1),           1.2, BLACK),
         *spans,
     ))
     story.append(svc)
@@ -793,23 +790,35 @@ def generate_invoice_pdf(
     ))
     story.append(SP(6))
 
-    qr_w   = 1.3 * inch
-    qr_h   = 1.3 * inch
-    stmp_w = 0.7 * inch
-    stmp_h = stmp_w * 53 / 72
+    qr_w = 1.3 * inch
+    qr_h = 1.3 * inch
     qr_row = Table(
-        [[Image(A_QR, width=qr_w, height=qr_h),
-          P("", s_body),
-          Image(A_STAMP, width=stmp_w, height=stmp_h)]],
+        [[Image(A_QR, width=qr_w, height=qr_h), P("", s_body), P("", s_body)]],
         colWidths=[CW * 0.25, CW * 0.5, CW * 0.25],
     )
     qr_row.setStyle(TableStyle([
         ("ALIGN",  (0, 0), (0, 0), "CENTER"),
-        ("ALIGN",  (2, 0), (2, 0), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(qr_row)
     story.append(SP(6))
+
+    # Closing block
+    story.append(P("Thanking You", s_body))
+    story.append(SP(4))
+    story.append(P("REPORTING DESK", s_blue))
+    story.append(P("HARMILAP SHARE TRANSFER AGENTS", s_red))
+    story.append(SP(6))
+    story.append(P(
+        "This is a system generated report, no signature is required.",
+        _s("sg3", size=9, leading=12, color=DARK),
+    ))
+    story.append(SP(4))
+    story.append(P(
+        f"Place: New Delhi     Date: {invoice_date.strftime('%d.%m.%Y')}",
+        _s("pd3", size=9, leading=12, color=DARK),
+    ))
+    story.append(SP(8))
 
     # ── Dark footer bar ───────────────────────────────────────────────────────
     ftr = Table(
@@ -824,14 +833,13 @@ def generate_invoice_pdf(
     story.append(ftr)
     story.append(SP(4))
 
-    # ── Contact line below dark bar ───────────────────────────────────────────
     story.append(P(
         "If there is any query, please feel free to Contact us at "
         "Ph: 9205234407 / 8929835991 or email us at harmilaprta@gmail.com",
         _s("ct", size=9, leading=12, align=TA_CENTER),
     ))
 
-    return _build(story, A_INVOICE_HDR, _INH)
+    return _build_full(story, A_INVOICE_HDR, _INH)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
