@@ -165,6 +165,7 @@ export interface ZipIngestResult {
   total_skipped: number;
   errors: string[];
   unknown_isins: string[];
+  nsdl_updated: number;
 }
 
 export interface CompanyStats {

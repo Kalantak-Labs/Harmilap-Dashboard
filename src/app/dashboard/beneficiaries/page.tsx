@@ -142,6 +142,9 @@ export default function BeneficiariesPage() {
               <div>
                 <strong>Last ingest:</strong> {ingestResult.files_processed} files · {ingestResult.total_created} created · {ingestResult.total_updated} updated · {ingestResult.total_skipped} skipped (older date)
                 {ingestResult.files_skipped > 0 && <span style={{ color: "var(--warning)", marginLeft: 8 }}>{ingestResult.files_skipped} files skipped</span>}
+                {ingestResult.nsdl_updated > 0 && (
+                  <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>· NSDL shares updated for {ingestResult.nsdl_updated} compan{ingestResult.nsdl_updated === 1 ? "y" : "ies"}</span>
+                )}
                 {ingestResult.errors.length > 0 && (
                   <div style={{ color: "var(--danger)", marginTop: 4, fontSize: 12 }}>
                     {ingestResult.errors.slice(0, 3).join(" | ")}{ingestResult.errors.length > 3 ? ` +${ingestResult.errors.length - 3} more` : ""}

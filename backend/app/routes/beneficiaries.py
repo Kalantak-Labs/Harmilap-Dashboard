@@ -117,7 +117,7 @@ async def ingest_zip(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .zip files accepted")
 
     contents = await file.read()
-    files_processed = files_skipped = total_created = total_updated = total_skipped = 0
+    files_processed = files_skipped = total_created = total_updated = total_skipped = nsdl_updated = 0
     errors: list[str] = []
     unknown_isins: list[str] = []
 
@@ -154,11 +154,12 @@ async def ingest_zip(
             isin = header["isin_code"]
             file_record_date = header["record_date"]
 
-            # Reject files whose ISIN has no matching company
-            company_check = await db.execute(
-                select(Company.isin_code).where(Company.isin_code == isin)
+            # Reject files whose ISIN has no matching company; fetch Company for later update
+            company_result = await db.execute(
+                select(Company).where(Company.isin_code == isin)
             )
-            if not company_check.scalar_one_or_none():
+            company_obj = company_result.scalar_one_or_none()
+            if not company_obj:
                 errors.append(f"{fname}: ISIN {isin} not found in Companies — add the company first")
                 if isin not in unknown_isins:
                     unknown_isins.append(isin)
@@ -208,6 +209,15 @@ async def ingest_zip(
                 li = BenposLockin(**rec)
                 db.add(li)
 
+            # Sync NSDL share total from file header into company record
+            total_nsdl = header.get("total_nsdl_positions")
+            if total_nsdl is not None:
+                company_obj.nsdl_shares = int(total_nsdl)
+                if total_nsdl > 0:
+                    company_obj.has_nsdl_shares = True
+                company_obj.updated_at = datetime.now(timezone.utc)
+                nsdl_updated += 1
+
             files_processed += 1
 
         except Exception as e:
@@ -224,6 +234,7 @@ async def ingest_zip(
         total_skipped=total_skipped,
         errors=errors[:50],
         unknown_isins=unknown_isins,
+        nsdl_updated=nsdl_updated,
     )
 
 

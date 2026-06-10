@@ -108,3 +108,4 @@ class ZipIngestResult(BaseModel):
     total_skipped: int
     errors: list[str]
     unknown_isins: list[str] = []  # ISINs not found in the companies table
+    nsdl_updated: int = 0          # companies whose nsdl_shares were refreshed
