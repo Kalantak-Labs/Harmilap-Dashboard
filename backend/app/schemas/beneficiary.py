@@ -107,3 +107,4 @@ class ZipIngestResult(BaseModel):
     total_updated: int
     total_skipped: int
     errors: list[str]
+    unknown_isins: list[str] = []  # ISINs not found in the companies table

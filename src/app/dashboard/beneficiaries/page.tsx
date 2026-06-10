@@ -121,18 +121,35 @@ export default function BeneficiariesPage() {
 
       {/* Ingest result */}
       {ingestResult && (
-        <div style={{ marginBottom: 16, padding: "12px 16px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "var(--radius)", fontSize: 13 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <strong>Last ingest:</strong> {ingestResult.files_processed} files · {ingestResult.total_created} created · {ingestResult.total_updated} updated · {ingestResult.total_skipped} skipped (older date)
-              {ingestResult.files_skipped > 0 && <span style={{ color: "var(--warning)", marginLeft: 8 }}>{ingestResult.files_skipped} files skipped</span>}
-              {ingestResult.errors.length > 0 && (
-                <div style={{ color: "var(--danger)", marginTop: 4, fontSize: 12 }}>
-                  {ingestResult.errors.slice(0, 3).join(" | ")}{ingestResult.errors.length > 3 ? ` +${ingestResult.errors.length - 3} more` : ""}
-                </div>
-              )}
+        <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Unknown ISINs warning */}
+          {ingestResult.unknown_isins.length > 0 && (
+            <div style={{ padding: "12px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "var(--radius)", fontSize: 13 }}>
+              <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 6 }}>
+                ⚠ {ingestResult.unknown_isins.length} ISIN{ingestResult.unknown_isins.length > 1 ? "s" : ""} not found in Companies — files skipped
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {ingestResult.unknown_isins.map((isin) => (
+                  <code key={isin} style={{ fontSize: 12, background: "#fef3c7", padding: "2px 8px", borderRadius: 4, border: "1px solid #fcd34d", color: "#78350f" }}>{isin}</code>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: "#92400e", marginTop: 6 }}>Add these companies first, then re-upload the ZIP.</div>
             </div>
-            <button onClick={() => setIngestResult(null)} style={{ color: "var(--text-muted)", display: "flex" }}><X size={14} /></button>
+          )}
+          {/* Summary */}
+          <div style={{ padding: "12px 16px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "var(--radius)", fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <strong>Last ingest:</strong> {ingestResult.files_processed} files · {ingestResult.total_created} created · {ingestResult.total_updated} updated · {ingestResult.total_skipped} skipped (older date)
+                {ingestResult.files_skipped > 0 && <span style={{ color: "var(--warning)", marginLeft: 8 }}>{ingestResult.files_skipped} files skipped</span>}
+                {ingestResult.errors.length > 0 && (
+                  <div style={{ color: "var(--danger)", marginTop: 4, fontSize: 12 }}>
+                    {ingestResult.errors.slice(0, 3).join(" | ")}{ingestResult.errors.length > 3 ? ` +${ingestResult.errors.length - 3} more` : ""}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setIngestResult(null)} style={{ color: "var(--text-muted)", display: "flex" }}><X size={14} /></button>
+            </div>
           </div>
         </div>
       )}

@@ -173,6 +173,8 @@ export default function UsersPage() {
     }
   };
 
+  const activeAdminCount = users.filter((u) => u.role === "admin" && u.is_active).length;
+
   return (
     <div>
       <div className="page-header">
@@ -201,39 +203,50 @@ export default function UsersPage() {
                 <tr><td colSpan={7}><div className="spinner-center"><span className="spinner" /></div></td></tr>
               ) : users.length === 0 ? (
                 <tr><td colSpan={7}><div className="empty-state"><User size={28} /><div>No users yet</div></div></td></tr>
-              ) : users.map((u) => (
-                <tr key={u.id}>
-                  <td style={{ fontWeight: 500 }}>
-                    {u.name}
-                    {u.id === me?.id && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 11 }}>You</span>}
-                  </td>
-                  <td style={{ color: "var(--text-secondary)" }}>{u.email}</td>
-                  <td>
-                    {u.role === "admin"
-                      ? <span className="badge badge-yellow"><Shield size={11} /> Admin</span>
-                      : <span className="badge badge-gray"><User size={11} /> User</span>}
-                  </td>
-                  <td>
-                    {u.role === "admin"
-                      ? <span style={{ color: "var(--text-muted)", fontSize: 12 }}>All</span>
-                      : u.permissions.length === 0
-                        ? <span style={{ color: "var(--text-muted)", fontSize: 12 }}>None</span>
-                        : u.permissions.map((p) => (
-                          <span key={p} className="badge badge-gray" style={{ marginRight: 4, fontSize: 11 }}>{p}</span>
-                        ))}
-                  </td>
-                  <td>{u.is_active ? <span className="badge badge-green">Active</span> : <span className="badge badge-red">Inactive</span>}</td>
-                  <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{new Date(u.created_at).toLocaleDateString("en-IN")}</td>
-                  <td>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditUser(u)}><Edit2 size={14} /></button>
-                      {u.id !== me?.id && (
-                        <button className="btn btn-ghost btn-sm btn-icon" style={{ color: "var(--danger)" }} onClick={() => setDeleteUser(u)}><Trash2 size={14} /></button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              ) : users.map((u) => {
+                const isLastActiveAdmin = u.role === "admin" && u.is_active && activeAdminCount <= 1;
+                return (
+                  <tr key={u.id}>
+                    <td style={{ fontWeight: 500 }}>
+                      {u.name}
+                      {u.id === me?.id && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 11 }}>You</span>}
+                    </td>
+                    <td style={{ color: "var(--text-secondary)" }}>{u.email}</td>
+                    <td>
+                      {u.role === "admin"
+                        ? <span className="badge badge-yellow"><Shield size={11} /> Admin</span>
+                        : <span className="badge badge-gray"><User size={11} /> User</span>}
+                    </td>
+                    <td>
+                      {u.role === "admin"
+                        ? <span style={{ color: "var(--text-muted)", fontSize: 12 }}>All</span>
+                        : u.permissions.length === 0
+                          ? <span style={{ color: "var(--text-muted)", fontSize: 12 }}>None</span>
+                          : u.permissions.map((p) => (
+                            <span key={p} className="badge badge-gray" style={{ marginRight: 4, fontSize: 11 }}>{p}</span>
+                          ))}
+                    </td>
+                    <td>{u.is_active ? <span className="badge badge-green">Active</span> : <span className="badge badge-red">Inactive</span>}</td>
+                    <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{new Date(u.created_at).toLocaleDateString("en-IN")}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditUser(u)}><Edit2 size={14} /></button>
+                        {u.id !== me?.id && (
+                          <button
+                            className="btn btn-ghost btn-sm btn-icon"
+                            style={{ color: isLastActiveAdmin ? "var(--text-muted)" : "var(--danger)", cursor: isLastActiveAdmin ? "not-allowed" : "pointer" }}
+                            onClick={() => !isLastActiveAdmin && setDeleteUser(u)}
+                            disabled={isLastActiveAdmin}
+                            title={isLastActiveAdmin ? "Cannot delete the only active admin — promote another user to admin first" : undefined}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

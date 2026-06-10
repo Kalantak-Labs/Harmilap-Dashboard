@@ -164,4 +164,10 @@ export interface ZipIngestResult {
   total_updated: number;
   total_skipped: number;
   errors: string[];
+  unknown_isins: string[];
+}
+
+export interface CompanyStats {
+  beneficiary_count: number;
+  invoice_count: number;
 }

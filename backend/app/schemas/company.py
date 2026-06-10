@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def _non_negative(v: int | None) -> int | None:
+    if v is not None and v < 0:
+        raise ValueError("Value cannot be negative")
+    return v
 
 
 class CompanyBase(BaseModel):
@@ -29,6 +36,21 @@ class CompanyBase(BaseModel):
     has_cdsl_shares: bool = False
     cdsl_shares: int | None = None
     physical_shares: int | None = None
+
+    @field_validator("isin_code")
+    @classmethod
+    def validate_isin(cls, v: str) -> str:
+        v = v.strip().upper()
+        if len(v) != 12:
+            raise ValueError(f"ISIN must be exactly 12 characters (got {len(v)})")
+        if not v.isalnum():
+            raise ValueError("ISIN must contain only letters and numbers")
+        return v
+
+    @field_validator("total_shares", "nsdl_shares", "cdsl_shares", "physical_shares")
+    @classmethod
+    def validate_shares(cls, v: int | None) -> int | None:
+        return _non_negative(v)
 
 
 class CompanyCreate(CompanyBase):
@@ -60,6 +82,11 @@ class CompanyUpdate(BaseModel):
     cdsl_shares: int | None = None
     physical_shares: int | None = None
 
+    @field_validator("total_shares", "nsdl_shares", "cdsl_shares", "physical_shares")
+    @classmethod
+    def validate_shares(cls, v: int | None) -> int | None:
+        return _non_negative(v)
+
 
 class CompanyOut(CompanyBase):
     id: uuid.UUID
@@ -90,3 +117,8 @@ class IngestResult(BaseModel):
     updated: int
     skipped: int
     errors: list[str]
+
+
+class CompanyStats(BaseModel):
+    beneficiary_count: int
+    invoice_count: int

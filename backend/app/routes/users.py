@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.database import get_db
 from app.models.user import User
@@ -12,6 +12,13 @@ from app.services.auth import hash_password, verify_password
 from app.dependencies import get_current_user, require_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+async def _active_admin_count(db: AsyncSession) -> int:
+    result = await db.execute(
+        select(func.count(User.id)).where(User.role == "admin", User.is_active == True)
+    )
+    return result.scalar() or 0
 
 
 @router.get("/", response_model=list[UserOut])
@@ -82,13 +89,26 @@ async def get_user(
 async def update_user(
     user_id: uuid.UUID,
     body: UserUpdate,
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Protect the last active admin from being demoted or deactivated
+    if user.role == "admin" and user.is_active:
+        will_deactivate = body.is_active is False
+        will_downgrade  = body.role == "user"
+        if will_deactivate or will_downgrade:
+            count = await _active_admin_count(db)
+            if count <= 1:
+                action = "deactivate" if will_deactivate else "downgrade"
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cannot {action} the only active admin account — promote another user to admin first",
+                )
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(user, field, value)
@@ -106,9 +126,20 @@ async def delete_user(
 ):
     if user_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete yourself")
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Protect the last active admin from being deleted
+    if user.role == "admin" and user.is_active:
+        count = await _active_admin_count(db)
+        if count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot delete the only active admin account — promote another user to admin first",
+            )
+
     await db.delete(user)
     await db.commit()

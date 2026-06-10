@@ -193,6 +193,7 @@ export const api = {
     update: (id: string, body: object) =>
       request<import("./types").Company>(`/companies/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<void>(`/companies/${id}`, { method: "DELETE" }),
+    stats: (id: string) => request<import("./types").CompanyStats>(`/companies/${id}/stats`),
     ingest: async (file: File) => {
       const form = new FormData();
       form.append("file", file);

@@ -38,6 +38,8 @@ export default function CompanyDetailPage() {
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteStats, setDeleteStats] = useState<{ beneficiary_count: number; invoice_count: number } | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   const load = async () => {
     try {
@@ -87,6 +89,19 @@ export default function CompanyDetailPage() {
       push("error", err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDeleteClick = async () => {
+    setLoadingStats(true);
+    try {
+      const stats = await api.companies.stats(id);
+      setDeleteStats(stats);
+    } catch {
+      setDeleteStats(null);
+    } finally {
+      setLoadingStats(false);
+      setShowDelete(true);
     }
   };
 
@@ -153,7 +168,9 @@ export default function CompanyDetailPage() {
                 <button className="btn btn-secondary" onClick={startEditing}><Edit2 size={14} /> Edit</button>
               )}
               {can("editor") && (
-                <button className="btn btn-danger" onClick={() => setShowDelete(true)}><Trash2 size={14} /> Delete</button>
+                <button className="btn btn-danger" onClick={handleDeleteClick} disabled={loadingStats}>
+                  {loadingStats ? <span className="spinner" /> : <Trash2 size={14} />} Delete
+                </button>
               )}
             </>
           )}
@@ -248,12 +265,18 @@ export default function CompanyDetailPage() {
       {showDelete && (
         <ConfirmModal
           title="Delete Company"
-          message={`Are you sure you want to delete "${company.company_name ?? company.isin_code}"? This cannot be undone.`}
+          message={[
+            `Are you sure you want to delete "${company.company_name ?? company.isin_code}"?`,
+            deleteStats && (deleteStats.beneficiary_count > 0 || deleteStats.invoice_count > 0)
+              ? `This will permanently delete ${deleteStats.beneficiary_count} beneficiar${deleteStats.beneficiary_count === 1 ? "y" : "ies"} and ${deleteStats.invoice_count} invoice record${deleteStats.invoice_count === 1 ? "" : "s"}. `
+              : "",
+            "This cannot be undone.",
+          ].join(" ").trim()}
           confirmLabel="Delete"
           danger
           loading={deleting}
           onConfirm={deleteCompany}
-          onClose={() => setShowDelete(false)}
+          onClose={() => { setShowDelete(false); setDeleteStats(null); }}
         />
       )}
     </div>

@@ -43,9 +43,13 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     setSecAutoFilled(false);
   };
 
+  const isinLen = form.isin_code.trim().length;
+  const isinValid = isinLen === 12 && /^[A-Z0-9]{12}$/.test(form.isin_code.trim().toUpperCase());
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.isin_code.trim()) { push("error", "ISIN Code is required"); return; }
+    if (!isinValid) { push("error", "ISIN must be exactly 12 alphanumeric characters"); return; }
     setLoading(true);
     try {
       await api.companies.create({
@@ -77,7 +81,19 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div className="grid-2">
               <div className="form-group">
                 <label className="form-label required">ISIN Code</label>
-                <input className="input" value={form.isin_code} onChange={(e) => handleIsinChange(e.target.value)} placeholder="INE000000000" required />
+                <input
+                  className="input"
+                  value={form.isin_code}
+                  onChange={(e) => handleIsinChange(e.target.value.toUpperCase())}
+                  placeholder="INE000000000"
+                  required
+                  style={isinLen > 0 && !isinValid ? { borderColor: "var(--danger)" } : undefined}
+                />
+                {isinLen > 0 && (
+                  <div style={{ fontSize: 11, marginTop: 3, color: isinValid ? "var(--success, #16a34a)" : "var(--danger)" }}>
+                    {isinLen}/12{isinValid ? " — valid format" : isinLen > 12 ? " — too long" : " — must be 12 alphanumeric characters"}
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">Company Name</label>

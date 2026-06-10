@@ -11,6 +11,7 @@ from sqlalchemy import select, or_, func, delete
 
 from app.database import get_db
 from app.models.beneficiary import Beneficiary, BenposLockin
+from app.models.company import Company
 from app.models.user import User
 from app.schemas.beneficiary import BeneficiaryListOut, BeneficiaryOut, ZipIngestResult
 from app.services.benpos_parser import parse_benpos_file
@@ -118,6 +119,7 @@ async def ingest_zip(
     contents = await file.read()
     files_processed = files_skipped = total_created = total_updated = total_skipped = 0
     errors: list[str] = []
+    unknown_isins: list[str] = []
 
     try:
         zf = zipfile.ZipFile(io.BytesIO(contents))
@@ -151,6 +153,17 @@ async def ingest_zip(
 
             isin = header["isin_code"]
             file_record_date = header["record_date"]
+
+            # Reject files whose ISIN has no matching company
+            company_check = await db.execute(
+                select(Company.isin_code).where(Company.isin_code == isin)
+            )
+            if not company_check.scalar_one_or_none():
+                errors.append(f"{fname}: ISIN {isin} not found in Companies — add the company first")
+                if isin not in unknown_isins:
+                    unknown_isins.append(isin)
+                files_skipped += 1
+                continue
 
             # Process detail (02) records
             for rec in details:
@@ -209,7 +222,8 @@ async def ingest_zip(
         total_created=total_created,
         total_updated=total_updated,
         total_skipped=total_skipped,
-        errors=errors[:50],  # cap at 50
+        errors=errors[:50],
+        unknown_isins=unknown_isins,
     )
 
 
