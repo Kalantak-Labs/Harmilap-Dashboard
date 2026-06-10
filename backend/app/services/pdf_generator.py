@@ -272,34 +272,16 @@ def generate_benpos_pdf(
     story.append(P("<b><font color='#C00000'>Important Notes: -</font></b>", s_body))
     story.append(SP(4))
     story.append(P(
-        "This report is prepared based on the Beneficiary reports shared by the Depository "
-        "and helps the company to update records with other authorities. However, the company "
-        "must consider the physical holding / further issuance of securities (if any) and match "
-        "the same with internal company records when filing details with any authority.",
+        "1. This report is based on the beneficiary data provided by the respective "
+        "Depository(ies) as of the reporting date and is issued on the request of the "
+        "Issuer Client Company.",
         s_just,
     ))
     story.append(SP(4))
     story.append(P(
-        "Beneficiary Position is attached with report only in case of Demat / Electronic Holdings",
-        s_body,
-    ))
-    story.append(SP(4))
-    story.append(P(
-        "This report should be checked and verified by the Company Secretary before filing with any authority.",
+        "2. Any discrepancy or clarification relating to this report should be brought to "
+        "our notice immediately at +91 9205234407 or harmilaprta@gmail.com.",
         s_just,
-    ))
-    story.append(SP(4))
-    story.append(P(
-        "\"<b>Harmilap Share Transfer Agents</b>\" shall not be held responsible, directly or indirectly, "
-        "for any false, misleading, or misrepresented information submitted by the company to any authority "
-        "without verifying the same with the company&#8217;s internal records.",
-        s_just,
-    ))
-    story.append(SP(10))
-    story.append(P(
-        "In case of any discrepancy in the above report, kindly contact us immediately at "
-        "Ph: 9205234407 or email harmilaprta@gmail.com",
-        s_body,
     ))
     story.append(SP(14))
     story.append(P("Thanking You", s_body))
