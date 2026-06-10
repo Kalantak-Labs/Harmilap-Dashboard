@@ -279,7 +279,7 @@ def generate_benpos_pdf(
     story.append(P(
         "<b>Note:</b><br/>"
         "&#8226; This report has been generated as per the request of the Issuer Client "
-        "Company. In case of any queries, please feel free to contact us.<br/>&#8226;",
+        "Company. In case of any queries, please feel free to contact us.",
         s_body,
     ))
     story.append(SP(14))
