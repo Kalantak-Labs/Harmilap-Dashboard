@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -13,6 +14,13 @@ from app.routes import auth, users, companies, beneficiaries, reports, emails
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Schema migrations for columns added after initial deploy
+        await conn.execute(
+            text(
+                "ALTER TABLE beneficiaries "
+                "ADD COLUMN IF NOT EXISTS depository VARCHAR(10) NOT NULL DEFAULT 'NSDL'"
+            )
+        )
     yield
 
 

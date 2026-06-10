@@ -30,7 +30,10 @@ export default function BeneficiariesPage() {
 
   const [ingesting, setIngesting] = useState(false);
   const [ingestResult, setIngestResult] = useState<ZipIngestResult | null>(null);
+  const [cdslIngesting, setCdslIngesting] = useState(false);
+  const [cdslIngestResult, setCdslIngestResult] = useState<ZipIngestResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cdslFileRef = useRef<HTMLInputElement>(null);
 
   const params = () => ({
     ...(isin ? { isin_code: isin } : {}),
@@ -75,6 +78,23 @@ export default function BeneficiariesPage() {
     }
   };
 
+  const handleCdslIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    e.target.value = "";
+    setCdslIngesting(true);
+    try {
+      const result = await api.beneficiaries.ingestCdslZip(f);
+      setCdslIngestResult(result);
+      push("success", `CDSL ZIP processed: ${result.total_created} created, ${result.total_updated} updated, ${result.cdsl_updated} companies updated`);
+      load();
+    } catch (err: unknown) {
+      push("error", err instanceof Error ? err.message : "CDSL ingest failed");
+    } finally {
+      setCdslIngesting(false);
+    }
+  };
+
   const handleExport = () => {
     const p: Record<string, string> = {};
     if (isin) p.isin_code = isin;
@@ -107,7 +127,12 @@ export default function BeneficiariesPage() {
               <input ref={fileRef} type="file" accept=".zip" style={{ display: "none" }} onChange={handleIngest} />
               <button className="btn btn-secondary" onClick={() => fileRef.current?.click()} disabled={ingesting}>
                 {ingesting ? <span className="spinner" /> : <Upload size={15} />}
-                {ingesting ? "Processing…" : "Upload ZIP"}
+                {ingesting ? "Processing…" : "Upload NSDL ZIP"}
+              </button>
+              <input ref={cdslFileRef} type="file" accept=".zip" style={{ display: "none" }} onChange={handleCdslIngest} />
+              <button className="btn btn-secondary" onClick={() => cdslFileRef.current?.click()} disabled={cdslIngesting}>
+                {cdslIngesting ? <span className="spinner" /> : <Upload size={15} />}
+                {cdslIngesting ? "Processing…" : "Upload CDSL ZIP"}
               </button>
             </>
           )}
@@ -119,10 +144,9 @@ export default function BeneficiariesPage() {
         </div>
       </div>
 
-      {/* Ingest result */}
+      {/* NSDL Ingest result */}
       {ingestResult && (
         <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-          {/* Unknown ISINs warning */}
           {ingestResult.unknown_isins.length > 0 && (
             <div style={{ padding: "12px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "var(--radius)", fontSize: 13 }}>
               <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 6 }}>
@@ -136,11 +160,10 @@ export default function BeneficiariesPage() {
               <div style={{ fontSize: 12, color: "#92400e", marginTop: 6 }}>Add these companies first, then re-upload the ZIP.</div>
             </div>
           )}
-          {/* Summary */}
           <div style={{ padding: "12px 16px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "var(--radius)", fontSize: 13 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <strong>Last ingest:</strong> {ingestResult.files_processed} files · {ingestResult.total_created} created · {ingestResult.total_updated} updated · {ingestResult.total_skipped} skipped (older date)
+                <strong>NSDL ingest:</strong> {ingestResult.files_processed} files · {ingestResult.total_created} created · {ingestResult.total_updated} updated · {ingestResult.total_skipped} skipped
                 {ingestResult.files_skipped > 0 && <span style={{ color: "var(--warning)", marginLeft: 8 }}>{ingestResult.files_skipped} files skipped</span>}
                 {ingestResult.nsdl_updated > 0 && (
                   <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>· NSDL shares updated for {ingestResult.nsdl_updated} compan{ingestResult.nsdl_updated === 1 ? "y" : "ies"}</span>
@@ -152,6 +175,40 @@ export default function BeneficiariesPage() {
                 )}
               </div>
               <button onClick={() => setIngestResult(null)} style={{ color: "var(--text-muted)", display: "flex" }}><X size={14} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CDSL Ingest result */}
+      {cdslIngestResult && (
+        <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+          {cdslIngestResult.unknown_isins.length > 0 && (
+            <div style={{ padding: "12px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "var(--radius)", fontSize: 13 }}>
+              <div style={{ fontWeight: 600, color: "#92400e", marginBottom: 6 }}>
+                ⚠ {cdslIngestResult.unknown_isins.length} ISIN{cdslIngestResult.unknown_isins.length > 1 ? "s" : ""} not found in Companies (CDSL)
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {cdslIngestResult.unknown_isins.map((isin) => (
+                  <code key={isin} style={{ fontSize: 12, background: "#fef3c7", padding: "2px 8px", borderRadius: 4, border: "1px solid #fcd34d", color: "#78350f" }}>{isin}</code>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ padding: "12px 16px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "var(--radius)", fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <strong>CDSL ingest:</strong> {cdslIngestResult.total_created} created · {cdslIngestResult.total_updated} updated · {cdslIngestResult.total_skipped} skipped
+                {cdslIngestResult.cdsl_updated > 0 && (
+                  <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>· CDSL shares updated for {cdslIngestResult.cdsl_updated} compan{cdslIngestResult.cdsl_updated === 1 ? "y" : "ies"}</span>
+                )}
+                {cdslIngestResult.errors.length > 0 && (
+                  <div style={{ color: "var(--danger)", marginTop: 4, fontSize: 12 }}>
+                    {cdslIngestResult.errors.slice(0, 3).join(" | ")}{cdslIngestResult.errors.length > 3 ? ` +${cdslIngestResult.errors.length - 3} more` : ""}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setCdslIngestResult(null)} style={{ color: "var(--text-muted)", display: "flex" }}><X size={14} /></button>
             </div>
           </div>
         </div>
@@ -190,11 +247,11 @@ export default function BeneficiariesPage() {
               <tr>
                 <th>Holder Name</th>
                 <th>ISIN</th>
+                <th>Depository</th>
                 <th>DP ID</th>
                 <th>Client ID</th>
                 <th>PAN</th>
                 <th>Type</th>
-                <th>Category</th>
                 <th style={{ textAlign: "right" }}>Free</th>
                 <th style={{ textAlign: "right" }}>Lock-in</th>
                 <th style={{ textAlign: "right" }}>Pledged</th>
@@ -203,9 +260,9 @@ export default function BeneficiariesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11}><div className="spinner-center"><span className="spinner" /></div></td></tr>
+                <tr><td colSpan={12}><div className="spinner-center"><span className="spinner" /></div></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={11}>
+                <tr><td colSpan={12}>
                   <div className="empty-state">
                     <Users size={32} />
                     <div>No beneficiaries found</div>
@@ -216,11 +273,11 @@ export default function BeneficiariesPage() {
                 <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => router.push(`/dashboard/beneficiaries/${b.id}`)}>
                   <td style={{ fontWeight: 500 }}>{b.first_holder_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{b.isin_code}</code></td>
+                  <td><span className={`badge ${b.depository === "CDSL" ? "badge-blue" : "badge-gray"}`} style={{ fontSize: 11 }}>{b.depository}</span></td>
                   <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{b.dp_id}</td>
                   <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{b.client_id}</td>
                   <td style={{ fontFamily: "monospace", fontSize: 12 }}>{b.first_holder_pan ?? "—"}</td>
                   <td>{b.beneficiary_type ? <span className="badge badge-gray" style={{ fontSize: 11 }}>{BENEF_TYPE[b.beneficiary_type] ?? b.beneficiary_type}</span> : "—"}</td>
-                  <td>{b.account_category ? <span className="badge badge-blue" style={{ fontSize: 11 }}>{ACCT_CAT[b.account_category] ?? b.account_category}</span> : "—"}</td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{b.free_positions?.toLocaleString() ?? "—"}</td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{b.lockin_positions ? <span style={{ color: "var(--warning)" }}>{b.lockin_positions.toLocaleString()}</span> : "—"}</td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{b.pledged_positions ? <span style={{ color: "var(--danger)" }}>{b.pledged_positions.toLocaleString()}</span> : "—"}</td>

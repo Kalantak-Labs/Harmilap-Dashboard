@@ -121,6 +121,11 @@ export const api = {
       form.append("file", file);
       return request<import("./types").ZipIngestResult>("/beneficiaries/ingest-zip", { method: "POST", body: form });
     },
+    ingestCdslZip: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<import("./types").ZipIngestResult>("/beneficiaries/ingest-cdsl-zip", { method: "POST", body: form });
+    },
     exportUrl: (params?: Record<string, string | undefined>) => {
       const qs = new URLSearchParams();
       if (params) Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });

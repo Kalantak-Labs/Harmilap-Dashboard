@@ -15,6 +15,7 @@ from app.models.company import Company
 from app.models.user import User
 from app.schemas.beneficiary import BeneficiaryListOut, BeneficiaryOut, ZipIngestResult
 from app.services.benpos_parser import parse_benpos_file
+from app.services.cdsl_parser import is_rt02, parse_rt95, parse_rt02
 from app.services.excel import build_beneficiary_export
 from app.dependencies import require_permission
 
@@ -235,6 +236,116 @@ async def ingest_zip(
         errors=errors[:50],
         unknown_isins=unknown_isins,
         nsdl_updated=nsdl_updated,
+    )
+
+
+@router.post("/ingest-cdsl-zip", response_model=ZipIngestResult)
+async def ingest_cdsl_zip(
+    file: Annotated[UploadFile, File()],
+    current_user: User = Depends(require_permission("can_ingest")),
+    db: AsyncSession = Depends(get_db),
+):
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .zip files accepted")
+
+    contents = await file.read()
+    total_created = total_updated = total_skipped = cdsl_updated = 0
+    errors: list[str] = []
+    unknown_isins: list[str] = []
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(contents))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ZIP file")
+
+    members = [n for n in zf.namelist() if not n.startswith("__") and not n.endswith("/")]
+    if len(members) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ZIP must contain exactly 2 CDSL files (RT95 + RT02)")
+
+    rt95_content: str | None = None
+    rt02_content: str | None = None
+
+    for fname in members:
+        raw = zf.read(fname)
+        for enc in ("utf-8", "latin-1", "cp1252"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            errors.append(f"{fname}: could not decode")
+            continue
+        if is_rt02(text):
+            rt02_content = text
+        else:
+            rt95_content = text
+
+    if not rt95_content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not identify RT95 (total shares) file in ZIP")
+    if not rt02_content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not identify RT02 (beneficiary detail) file in ZIP")
+
+    # --- RT95: update cdsl_shares on companies ---
+    rt95_rows = parse_rt95(rt95_content)
+    for row in rt95_rows:
+        isin = row["isin"]
+        company_result = await db.execute(select(Company).where(Company.isin_code == isin))
+        company_obj = company_result.scalar_one_or_none()
+        if not company_obj:
+            if isin not in unknown_isins:
+                unknown_isins.append(isin)
+            continue
+        company_obj.cdsl_shares = row["cdsl_shares"]
+        if row["cdsl_shares"] > 0:
+            company_obj.has_cdsl_shares = True
+        company_obj.updated_at = datetime.now(timezone.utc)
+        cdsl_updated += 1
+
+    # --- RT02: upsert individual CDSL beneficiaries ---
+    records, parse_errors = parse_rt02(rt02_content)
+    errors.extend(parse_errors[:20])
+
+    for rec in records:
+        isin = rec["isin_code"]
+        dp_id = rec["dp_id"]
+        client_id = rec["client_id"]
+        file_record_date = rec.get("record_date")
+
+        existing_result = await db.execute(
+            select(Beneficiary).where(
+                Beneficiary.isin_code == isin,
+                Beneficiary.dp_id == dp_id,
+                Beneficiary.client_id == client_id,
+                Beneficiary.depository == "CDSL",
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+
+        if existing:
+            if file_record_date and existing.record_date and file_record_date <= existing.record_date:
+                total_skipped += 1
+                continue
+            for field, value in rec.items():
+                if value is not None:
+                    setattr(existing, field, value)
+            existing.updated_at = datetime.now(timezone.utc)
+            total_updated += 1
+        else:
+            db.add(Beneficiary(**rec))
+            total_created += 1
+
+    await db.commit()
+
+    return ZipIngestResult(
+        files_processed=2,
+        files_skipped=0,
+        total_created=total_created,
+        total_updated=total_updated,
+        total_skipped=total_skipped,
+        errors=errors[:50],
+        unknown_isins=unknown_isins,
+        cdsl_updated=cdsl_updated,
     )
 
 

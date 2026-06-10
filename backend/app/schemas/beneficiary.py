@@ -9,6 +9,7 @@ class BeneficiaryListOut(BaseModel):
     isin_code: str
     dp_id: str
     client_id: str
+    depository: str = "NSDL"
     record_date: date | None
     first_holder_name: str | None
     first_holder_pan: str | None
@@ -109,3 +110,4 @@ class ZipIngestResult(BaseModel):
     errors: list[str]
     unknown_isins: list[str] = []  # ISINs not found in the companies table
     nsdl_updated: int = 0          # companies whose nsdl_shares were refreshed
+    cdsl_updated: int = 0          # companies whose cdsl_shares were refreshed

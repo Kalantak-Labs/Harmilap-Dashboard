@@ -18,8 +18,9 @@ class Beneficiary(Base):
 
     # Key
     isin_code: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    dp_id: Mapped[str] = mapped_column(String(8), nullable=False)
+    dp_id: Mapped[str] = mapped_column(String(16), nullable=False)
     client_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    depository: Mapped[str] = mapped_column(String(10), nullable=False, default="NSDL", server_default="NSDL")
     record_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Beneficiary classification

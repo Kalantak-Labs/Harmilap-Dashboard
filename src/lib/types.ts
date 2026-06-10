@@ -68,6 +68,7 @@ export interface BeneficiaryListItem {
   isin_code: string;
   dp_id: string;
   client_id: string;
+  depository: string;
   record_date: string | null;
   first_holder_name: string | null;
   first_holder_pan: string | null;
@@ -166,6 +167,7 @@ export interface ZipIngestResult {
   errors: string[];
   unknown_isins: string[];
   nsdl_updated: number;
+  cdsl_updated: number;
 }
 
 export interface CompanyStats {
