@@ -164,6 +164,12 @@ def _no_border_ts() -> TableStyle:
 
 
 # ── Address helper ────────────────────────────────────────────────────────────
+def _rta_prefix(company: dict) -> str:
+    """Return 'NSDL/CDSL' combined RTA prefix for reference numbers."""
+    parts = [v for v in [company.get("nsdl_rta_code"), company.get("cdsl_rta_code")] if v]
+    return "/".join(parts)
+
+
 def _addr(company: dict, sep: str = ", ") -> str:
     """Return billing_address if set, else join reg_address fields."""
     ba = company.get("billing_address")
@@ -266,8 +272,6 @@ def generate_benpos_pdf(
 
     addr = _addr(company)
     name = (company.get("company_name") or "").upper()
-    rta  = company.get("nsdl_rta_code") or ""
-
     # Company / address block
     info = Table(
         [
@@ -282,7 +286,7 @@ def generate_benpos_pdf(
 
     # Reference number + generated date row
     rd_for_ref   = record_date.strftime("%d%m%Y") if record_date else "NA"
-    auto_ref     = f"{rta}/NSDL/BENPOS/{rd_for_ref}"
+    auto_ref     = f"{_rta_prefix(company)}/NSDL/BENPOS/{rd_for_ref}"
     effective_ref = ref_no or auto_ref
     ref_row = Table(
         [[P(f"<b>Ref No:</b> {effective_ref}", s_body),
@@ -414,12 +418,10 @@ def generate_report_pdf(
     rd       = record_date or today
     rd_long  = _date_long(rd)
     fy       = current_fy(rd)
-    rta      = company.get("nsdl_rta_code") or ""
-
     if ref_prefix:
-        ref_no = f"{ref_prefix}/RTAN{rta}"
+        ref_no = f"{ref_prefix}/RTAN{_rta_prefix(company)}"
     else:
-        ref_no = f"{fy}/NSDL/{rd.strftime('%b%y').upper()}/RTAN{rta}"
+        ref_no = f"{fy}/NSDL/{rd.strftime('%b%y').upper()}/RTAN{_rta_prefix(company)}"
 
     gen_date_str = today.strftime("%d.%m.%Y")
 
