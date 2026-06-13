@@ -70,6 +70,12 @@ export default function ReportsPage() {
     params: ReconParams;
   } | null>(null);
 
+  // Depository picker modal state
+  const [benposModal, setBenposModal] = useState<{
+    companyId: string;
+    isin: string;
+  } | null>(null);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -90,18 +96,44 @@ export default function ReportsPage() {
 
   useEffect(() => { load(); }, [search, skip]);
 
-  const generate = async (type: ReportType, companyId: string, isin: string) => {
+  const generate = async (type: ReportType, companyId: string, isin: string, company?: CompanyListItem) => {
     if (type === "reconciliation") {
       setReconModal({ mode: "single", companyId, isin, params: defaultReconParams() });
       return;
     }
+    if (type === "benpos" && company?.has_nsdl_shares && company?.has_cdsl_shares) {
+      setBenposModal({ companyId, isin });
+      return;
+    }
+    const depository = type === "benpos"
+      ? (company?.has_cdsl_shares ? "CDSL" : company?.has_nsdl_shares ? "NSDL" : undefined)
+      : undefined;
     const key = `${type}:${companyId}`;
     setGenerating(key);
     try {
       const url = type === "benpos"
-        ? api.reports.downloadBenpos(companyId)
+        ? api.reports.downloadBenpos(companyId, depository)
         : api.reports.downloadInvoice(companyId);
-      await api.reports.generate(url, REPORT_META[type].filename(isin));
+      const filename = type === "benpos" && depository
+        ? `BENPOS_${isin}_${depository}.pdf`
+        : REPORT_META[type].filename(isin);
+      await api.reports.generate(url, filename);
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const downloadBenposWithDepository = async (depository: string) => {
+    if (!benposModal) return;
+    const { companyId, isin } = benposModal;
+    setBenposModal(null);
+    const key = `benpos:${companyId}`;
+    setGenerating(key);
+    try {
+      const url = api.reports.downloadBenpos(companyId, depository);
+      await api.reports.generate(url, `BENPOS_${isin}_${depository}.pdf`);
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -224,6 +256,43 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* Depository picker modal */}
+      {benposModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} onClick={() => setBenposModal(null)} />
+          <div className="card" style={{ position: "relative", zIndex: 1, width: 360, padding: "24px 24px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Download BENPOS Report</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  {benposModal.isin} — both NSDL &amp; CDSL data available
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setBenposModal(null)}><X size={15} /></button>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+              Choose which depository report to download:
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ flex: 1 }}
+                onClick={() => downloadBenposWithDepository("NSDL")}
+              >
+                <Download size={14} /> NSDL
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ flex: 1, background: "#2563eb", borderColor: "#2563eb" }}
+                onClick={() => downloadBenposWithDepository("CDSL")}
+              >
+                <Download size={14} /> CDSL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h2>Reports</h2>
@@ -320,7 +389,7 @@ export default function ReportsPage() {
                         <button
                           className="btn btn-ghost btn-sm btn-icon"
                           title={`Download ${REPORT_META[type].label}`}
-                          onClick={() => generate(type, c.id, c.isin_code ?? c.arn_number ?? "")}
+                          onClick={() => generate(type, c.id, c.isin_code ?? c.arn_number ?? "", c)}
                           disabled={!!generating}
                           style={{ color: busy ? "var(--text-muted)" : REPORT_META[type].color }}
                         >

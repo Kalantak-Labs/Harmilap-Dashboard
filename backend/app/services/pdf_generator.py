@@ -253,6 +253,7 @@ def generate_benpos_pdf(
     beneficiaries: list[dict],
     record_date: Optional[date],
     ref_no: Optional[str] = None,
+    depository: Optional[str] = None,
 ) -> bytes:
     s_bold  = _s("bb",  "Helvetica-Bold", 11, 15)
     s_body  = _s("b",   size=11, leading=15)
@@ -286,7 +287,8 @@ def generate_benpos_pdf(
 
     # Reference number + generated date row
     rd_for_ref   = record_date.strftime("%d%m%Y") if record_date else "NA"
-    auto_ref     = f"{_rta_prefix(company)}/NSDL/BENPOS/{rd_for_ref}"
+    dep_label    = (depository or "NSDL").upper()
+    auto_ref     = f"{_rta_prefix(company)}/{dep_label}/BENPOS/{rd_for_ref}"
     effective_ref = ref_no or auto_ref
     ref_row = Table(
         [[P(f"<b>Ref No:</b> {effective_ref}", s_body),
@@ -303,7 +305,8 @@ def generate_benpos_pdf(
     isin          = company.get("isin_code") or ""
     security_type = (company.get("security_type") or "EQUITY").upper()
     sec_display   = security_type.replace("SHARES", "shares")
-    story.append(P(f"BENPOS as on {rd_str} for {sec_display} ISIN: {isin}", s_red_c))
+    dep_prefix    = f"{dep_label} " if depository else ""
+    story.append(P(f"{dep_prefix}BENPOS as on {rd_str} for {sec_display} ISIN: {isin}", s_red_c))
     story.append(SP(10))
 
     # Beneficiary table

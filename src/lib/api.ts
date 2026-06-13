@@ -140,7 +140,7 @@ export const api = {
     updateInvoiceConfig: (body: import("./types").InvoiceConfig) =>
       request<{ ok: boolean }>("/reports/invoice-config", { method: "PUT", body: JSON.stringify(body) }),
 
-    downloadBenpos:             (id: string) => `${BASE}/reports/benpos/${id}`,
+    downloadBenpos:             (id: string, depository?: string) => `${BASE}/reports/benpos/${id}${depository ? `?depository=${depository}` : ""}`,
     downloadReconciliation:     (id: string, params?: { report_date?: string; ref_prefix?: string }) => {
       const qs = new URLSearchParams();
       if (params?.report_date) qs.set("report_date", params.report_date);

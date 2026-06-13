@@ -2,7 +2,7 @@ import io
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func as sql_func
@@ -53,16 +53,15 @@ async def _get_company(company_id: str, db: AsyncSession) -> Company:
     return c
 
 
-async def _beneficiaries_for(isin: str, db: AsyncSession) -> tuple[list[dict], Optional[date]]:
-    result = await db.execute(
-        select(Beneficiary)
-        .where(Beneficiary.isin_code == isin)
-        .order_by(Beneficiary.record_date.desc())
-    )
+async def _beneficiaries_for(
+    isin: str, db: AsyncSession, depository: str | None = None
+) -> tuple[list[dict], Optional[date]]:
+    q = select(Beneficiary).where(Beneficiary.isin_code == isin)
+    if depository:
+        q = q.where(Beneficiary.depository == depository.upper())
+    result = await db.execute(q.order_by(Beneficiary.record_date.desc()))
     rows = result.scalars().all()
-    record_date = None
-    if rows:
-        record_date = max((r.record_date for r in rows if r.record_date), default=None)
+    record_date = max((r.record_date for r in rows if r.record_date), default=None) if rows else None
     return [_benef_dict(b) for b in rows], record_date
 
 
@@ -160,14 +159,16 @@ async def update_invoice_config(
 @router.post("/benpos/{company_id}")
 async def benpos_pdf(
     company_id: str,
+    depository: str | None = Query(None, description="NSDL or CDSL — omit for all"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("viewer")),
 ):
     company = await _get_company(company_id, db)
-    benefs, rd = await _beneficiaries_for(company.isin_code, db)
-    pdf = generate_benpos_pdf(_company_dict(company), benefs, rd)
+    benefs, rd = await _beneficiaries_for(company.isin_code, db, depository)
+    pdf = generate_benpos_pdf(_company_dict(company), benefs, rd, depository=depository)
     isin = company.isin_code or company_id
-    return _stream_pdf(pdf, f"BENPOS_{isin}.pdf")
+    suffix = f"_{depository.upper()}" if depository else ""
+    return _stream_pdf(pdf, f"BENPOS_{isin}{suffix}.pdf")
 
 
 @router.post("/benpos-bulk")
