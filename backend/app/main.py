@@ -20,6 +20,18 @@ async def lifespan(app: FastAPI):
             "ADD COLUMN IF NOT EXISTS nsdl_rta_code VARCHAR(50),"
             "ADD COLUMN IF NOT EXISTS cdsl_rta_code VARCHAR(50)"
         ))
+
+        # companies: ARN as an alternative key — ISIN is no longer mandatory
+        await conn.execute(text(
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS arn_number VARCHAR(50)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE companies ALTER COLUMN isin_code DROP NOT NULL"
+        ))
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_companies_arn_number "
+            "ON companies (arn_number)"
+        ))
         await conn.execute(text("""
             DO $$
             BEGIN

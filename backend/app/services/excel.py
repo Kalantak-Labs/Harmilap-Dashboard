@@ -1,8 +1,11 @@
 """
 Excel ingestion and export for the companies table.
 
+A row is keyed by ISIN Code when present, otherwise by ARN Number. At least one
+of the two columns must exist in the file, and each row must carry at least one.
+
 Import column headers (exact match required):
-  Company Name, ISIN Code, RTA Code,
+  Company Name, ISIN Code, ARN Number, RTA Code,
   Email 1, Email 2, ... (any number of email columns)
   Contact Number 1, Contact Number 2, ... (any number of phone columns)
   Authorized Person name, Designation of Authorized Person,
@@ -26,6 +29,8 @@ from openpyxl.utils import get_column_letter
 COLUMN_MAP: dict[str, str] = {
     "Company Name": "company_name",
     "ISIN Code": "isin_code",
+    "ARN Number": "arn_number",
+    "ARN": "arn_number",
     "RTA Code": "nsdl_rta_code",
     "NSDL RTA Code": "nsdl_rta_code",
     "CDSL RTA Code": "cdsl_rta_code",
@@ -55,7 +60,7 @@ INT_FIELDS = {"total_shares", "nsdl_shares", "cdsl_shares", "physical_shares"}
 
 # Columns before email/phone in export
 EXPORT_COLUMNS_PRE = [
-    "company_name", "isin_code", "nsdl_rta_code", "cdsl_rta_code",
+    "company_name", "isin_code", "arn_number", "nsdl_rta_code", "cdsl_rta_code",
 ]
 # Columns after email/phone in export
 EXPORT_COLUMNS_POST = [
@@ -67,7 +72,7 @@ EXPORT_COLUMNS_POST = [
     "has_cdsl_shares", "cdsl_shares", "physical_shares",
 ]
 
-EXPORT_HEADERS_PRE = ["Company Name", "ISIN Code", "RTA Code"]
+EXPORT_HEADERS_PRE = ["Company Name", "ISIN Code", "ARN Number", "NSDL RTA Code", "CDSL RTA Code"]
 EXPORT_HEADERS_POST = [
     "Authorized Person name", "Designation of Authorized Person",
     "GST number", "TAN number", "PAN number",
@@ -138,14 +143,21 @@ def parse_excel(file_bytes: bytes) -> tuple[list[dict], list[str]]:
     email_cols = _sorted_numbered_cols(all_cols, "Email")
     phone_cols = _sorted_numbered_cols(all_cols, "Contact Number")
 
-    if "ISIN Code" not in known_cols:
-        return [], ["Column 'ISIN Code' is required in the Excel file."]
+    has_isin_col = "ISIN Code" in known_cols
+    has_arn_col = any(col in known_cols and known_cols[col] == "arn_number" for col in known_cols)
+    if not has_isin_col and not has_arn_col:
+        return [], ["The Excel file must contain an 'ISIN Code' or 'ARN Number' column."]
 
     for idx, row in df.iterrows():
         row_num = idx + 2
-        isin_raw = _clean_str(row.get("ISIN Code"))
-        if not isin_raw:
-            errors.append(f"Row {row_num}: ISIN Code is empty, skipping.")
+        isin_raw = _clean_str(row.get("ISIN Code")) if has_isin_col else None
+        arn_raw = None
+        for col, field in known_cols.items():
+            if field == "arn_number" and (val := _clean_str(row.get(col))):
+                arn_raw = val
+                break
+        if not isin_raw and not arn_raw:
+            errors.append(f"Row {row_num}: neither ISIN Code nor ARN Number present, skipping.")
             continue
 
         record: dict = {}

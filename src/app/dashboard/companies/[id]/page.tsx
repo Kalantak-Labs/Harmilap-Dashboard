@@ -107,7 +107,7 @@ export default function CompanyDetailPage() {
 
   const startEditing = () => {
     // If security_type is missing, auto-derive from ISIN
-    const detected = securityTypeFromISIN(company!.isin_code);
+    const detected = company!.isin_code ? securityTypeFromISIN(company!.isin_code) : null;
     setForm({
       ...company!,
       ...(detected && !company!.security_type ? { security_type: detected } : {}),
@@ -146,9 +146,10 @@ export default function CompanyDetailPage() {
             <ArrowLeft size={16} />
           </button>
           <div>
-            <h2>{company.company_name ?? company.isin_code}</h2>
+            <h2>{company.company_name ?? company.isin_code ?? company.arn_number}</h2>
             <div style={{ color: "var(--text-secondary)", fontSize: 12, marginTop: 1 }}>
-              ISIN: {company.isin_code}
+              {company.isin_code ? `ISIN: ${company.isin_code}` : `ARN: ${company.arn_number}`}
+              {company.isin_code && company.arn_number && ` · ARN: ${company.arn_number}`}
               {company.nsdl_rta_code && ` · NSDL RTA: ${company.nsdl_rta_code}`}
               {company.cdsl_rta_code && ` · CDSL RTA: ${company.cdsl_rta_code}`}
             </div>
@@ -182,7 +183,18 @@ export default function CompanyDetailPage() {
         {/* Section: Core */}
         <div className="detail-grid">
           <div className="detail-section-title">Core Information</div>
-          <Field label="ISIN Code" value={<code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.isin_code}</code>} />
+          <Field label="ISIN Code" value={editing
+            ? inp("isin_code")
+            : company.isin_code
+              ? <code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.isin_code}</code>
+              : null}
+          />
+          <Field label="ARN Number" value={editing
+            ? inp("arn_number")
+            : company.arn_number
+              ? <code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.arn_number}</code>
+              : null}
+          />
           <Field label="Company Name" value={editing ? inp("company_name") : company.company_name} />
           <Field label="NSDL RTA Code" value={editing ? inp("nsdl_rta_code") : company.nsdl_rta_code} />
           <Field label="CDSL RTA Code" value={editing ? inp("cdsl_rta_code") : company.cdsl_rta_code} />
@@ -268,7 +280,7 @@ export default function CompanyDetailPage() {
         <ConfirmModal
           title="Delete Company"
           message={[
-            `Are you sure you want to delete "${company.company_name ?? company.isin_code}"?`,
+            `Are you sure you want to delete "${company.company_name ?? company.isin_code ?? company.arn_number}"?`,
             deleteStats && (deleteStats.beneficiary_count > 0 || deleteStats.invoice_count > 0)
               ? `This will permanently delete ${deleteStats.beneficiary_count} beneficiar${deleteStats.beneficiary_count === 1 ? "y" : "ies"} and ${deleteStats.invoice_count} invoice record${deleteStats.invoice_count === 1 ? "" : "s"}. `
               : "",

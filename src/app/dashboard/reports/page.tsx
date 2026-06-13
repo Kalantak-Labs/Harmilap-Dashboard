@@ -310,7 +310,7 @@ export default function ReportsPage() {
               ) : companies.map((c) => (
                 <tr key={c.id}>
                   <td style={{ fontWeight: 500 }}>{c.company_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                  <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{c.isin_code}</code></td>
+                  <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{c.isin_code ?? c.arn_number}</code></td>
                   <td>{c.security_type ? <span className="badge badge-gray">{c.security_type}</span> : "—"}</td>
                   {(["benpos", "reconciliation", "invoice"] as ReportType[]).map((type) => {
                     const key = `${type}:${c.id}`;
@@ -320,7 +320,7 @@ export default function ReportsPage() {
                         <button
                           className="btn btn-ghost btn-sm btn-icon"
                           title={`Download ${REPORT_META[type].label}`}
-                          onClick={() => generate(type, c.id, c.isin_code)}
+                          onClick={() => generate(type, c.id, c.isin_code ?? c.arn_number ?? "")}
                           disabled={!!generating}
                           style={{ color: busy ? "var(--text-muted)" : REPORT_META[type].color }}
                         >

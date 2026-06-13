@@ -182,7 +182,7 @@ async def benpos_bulk(
         try:
             benefs, rd = await _beneficiaries_for(c.isin_code, db)
             pdf = generate_benpos_pdf(_company_dict(c), benefs, rd)
-            entries.append((f"BENPOS_{c.isin_code}.pdf", pdf))
+            entries.append((f"BENPOS_{c.isin_code or c.arn_number}.pdf", pdf))
         except Exception:
             pass
     return _stream_zip(zip_pdfs(entries), "BENPOS_Bulk.zip")
@@ -227,7 +227,7 @@ async def reconciliation_bulk(
             _, rd = await _beneficiaries_for(c.isin_code, db)
             effective_date = report_date or rd
             pdf = generate_report_pdf(_company_dict(c), effective_date, ref_prefix=ref_prefix)
-            entries.append((f"Reconciliation_{c.isin_code}.pdf", pdf))
+            entries.append((f"Reconciliation_{c.isin_code or c.arn_number}.pdf", pdf))
         except Exception:
             pass
     return _stream_zip(zip_pdfs(entries), "Reconciliation_Bulk.zip")
@@ -277,7 +277,7 @@ async def invoice_bulk(
         try:
             inv_no = await _next_invoice_no(c, db)
             pdf    = generate_invoice_pdf(_company_dict(c), cfg_dict, inv_no, date.today())
-            entries.append((f"Invoice_{c.isin_code}.pdf", pdf))
+            entries.append((f"Invoice_{c.isin_code or c.arn_number}.pdf", pdf))
         except Exception:
             pass
     return _stream_zip(zip_pdfs(entries), "Invoices_Bulk.zip")

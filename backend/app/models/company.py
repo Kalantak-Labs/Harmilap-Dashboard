@@ -13,8 +13,10 @@ class Company(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    # Core identifiers
-    isin_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    # Core identifiers — a company is keyed by ISIN when present, otherwise by ARN.
+    # At least one of isin_code / arn_number must be set (enforced in the schema layer).
+    isin_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
+    arn_number: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
     company_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     nsdl_rta_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     cdsl_rta_code: Mapped[str | None] = mapped_column(String(50), nullable=True)

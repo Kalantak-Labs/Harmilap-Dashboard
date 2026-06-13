@@ -28,6 +28,7 @@ def _apply_search(query, search: str | None):
         or_(
             Company.company_name.ilike(term),
             Company.isin_code.ilike(term),
+            Company.arn_number.ilike(term),
             Company.nsdl_rta_code.ilike(term),
             Company.cdsl_rta_code.ilike(term),
             Company.pan_number.ilike(term),
@@ -75,8 +76,9 @@ async def count_companies(
             or_(
                 Company.company_name.ilike(term),
                 Company.isin_code.ilike(term),
+                Company.arn_number.ilike(term),
                 Company.nsdl_rta_code.ilike(term),
-            Company.cdsl_rta_code.ilike(term),
+                Company.cdsl_rta_code.ilike(term),
                 Company.pan_number.ilike(term),
             )
         )
@@ -116,7 +118,7 @@ async def export_companies(
         rows.append({
             col: getattr(c, col)
             for col in [
-                "company_name", "isin_code", "nsdl_rta_code", "cdsl_rta_code", "email_ids", "contact_numbers",
+                "company_name", "isin_code", "arn_number", "nsdl_rta_code", "cdsl_rta_code", "email_ids", "contact_numbers",
                 "authorized_person_name", "authorized_person_designation",
                 "gst_number", "tan_number", "pan_number",
                 "reg_address_line1", "reg_address_line2", "reg_address_line3", "reg_address_line4",
@@ -151,26 +153,46 @@ async def ingest_excel(
 
     for row in rows:
         isin = row.get("isin_code")
-        if not isin:
+        arn = row.get("arn_number")
+
+        # Normalise ISIN — validate format only when present
+        if isin:
+            isin = str(isin).strip().upper()
+            if len(isin) != 12 or not isin.isalnum():
+                errors.append(f"ISIN '{isin}': invalid format (must be 12 alphanumeric characters) — skipped")
+                skipped += 1
+                continue
+            row["isin_code"] = isin
+        else:
+            isin = None
+            row.pop("isin_code", None)
+
+        # Normalise ARN — free-form identifier
+        if arn:
+            arn = str(arn).strip().upper()
+            row["arn_number"] = arn
+        else:
+            arn = None
+            row.pop("arn_number", None)
+
+        # A row must carry at least one key (ISIN preferred, otherwise ARN)
+        if not isin and not arn:
             skipped += 1
             continue
 
-        # Normalise and validate ISIN format
-        isin = str(isin).strip().upper()
-        if len(isin) != 12 or not isin.isalnum():
-            errors.append(f"ISIN '{isin}': invalid format (must be 12 alphanumeric characters) — skipped")
-            skipped += 1
-            continue
-
-        row["isin_code"] = isin
+        key_label = f"ISIN {isin}" if isin else f"ARN {arn}"
 
         try:
-            result = await db.execute(select(Company).where(Company.isin_code == isin))
+            # Match an existing company by ISIN when present, otherwise by ARN
+            if isin:
+                result = await db.execute(select(Company).where(Company.isin_code == isin))
+            else:
+                result = await db.execute(select(Company).where(Company.arn_number == arn))
             existing = result.scalar_one_or_none()
 
             if existing:
                 for field, value in row.items():
-                    if field != "isin_code" and value is not None:
+                    if field not in ("isin_code", "arn_number") and value is not None:
                         setattr(existing, field, value)
                 existing.updated_at = datetime.now(timezone.utc)
                 existing.updated_by = current_user.id
@@ -185,7 +207,7 @@ async def ingest_excel(
                 created += 1
 
         except Exception as e:
-            errors.append(f"ISIN {isin}: {e}")
+            errors.append(f"{key_label}: {e}")
             skipped += 1
 
     await db.commit()
@@ -198,9 +220,14 @@ async def create_company(
     current_user: User = Depends(require_permission("editor")),
     db: AsyncSession = Depends(get_db),
 ):
-    existing = await db.execute(select(Company).where(Company.isin_code == body.isin_code))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"ISIN {body.isin_code} already exists")
+    if body.isin_code:
+        existing = await db.execute(select(Company).where(Company.isin_code == body.isin_code))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"ISIN {body.isin_code} already exists")
+    if body.arn_number:
+        existing = await db.execute(select(Company).where(Company.arn_number == body.arn_number))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"ARN {body.arn_number} already exists")
 
     company = Company(**body.model_dump(), created_by=current_user.id, updated_by=current_user.id)
     db.add(company)
@@ -220,14 +247,17 @@ async def company_stats(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    bc = await db.execute(
-        select(func.count(Beneficiary.id)).where(Beneficiary.isin_code == company.isin_code)
-    )
+    beneficiary_count = 0
+    if company.isin_code:
+        bc = await db.execute(
+            select(func.count(Beneficiary.id)).where(Beneficiary.isin_code == company.isin_code)
+        )
+        beneficiary_count = bc.scalar() or 0
     ic = await db.execute(
         select(func.count(GeneratedInvoice.id)).where(GeneratedInvoice.company_id == company.id)
     )
     return CompanyStats(
-        beneficiary_count=bc.scalar() or 0,
+        beneficiary_count=beneficiary_count,
         invoice_count=ic.scalar() or 0,
     )
 
@@ -257,8 +287,33 @@ async def update_company(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    updates = body.model_dump(exclude_none=True)
+
+    # Guard uniqueness when ISIN/ARN are being changed
+    new_isin = updates.get("isin_code")
+    if new_isin and new_isin != company.isin_code:
+        dup = await db.execute(
+            select(Company).where(Company.isin_code == new_isin, Company.id != company_id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"ISIN {new_isin} already exists")
+    new_arn = updates.get("arn_number")
+    if new_arn and new_arn != company.arn_number:
+        dup = await db.execute(
+            select(Company).where(Company.arn_number == new_arn, Company.id != company_id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"ARN {new_arn} already exists")
+
+    for field, value in updates.items():
         setattr(company, field, value)
+
+    if not company.isin_code and not company.arn_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A company must have either an ISIN code or an ARN number",
+        )
+
     company.updated_at = datetime.now(timezone.utc)
     company.updated_by = current_user.id
     await db.commit()
@@ -279,9 +334,11 @@ async def delete_company(
 
     isin = company.isin_code
 
-    # Cascade-delete all related data (FK constraints don't cascade automatically)
-    await db.execute(delete(BenposLockin).where(BenposLockin.isin_code == isin))
-    await db.execute(delete(Beneficiary).where(Beneficiary.isin_code == isin))
+    # Cascade-delete all related data (FK constraints don't cascade automatically).
+    # Beneficiary/benpos rows are keyed by ISIN, so only purge them for ISIN-backed companies.
+    if isin:
+        await db.execute(delete(BenposLockin).where(BenposLockin.isin_code == isin))
+        await db.execute(delete(Beneficiary).where(Beneficiary.isin_code == isin))
     await db.execute(delete(GeneratedInvoice).where(GeneratedInvoice.company_id == company.id))
 
     await db.delete(company)

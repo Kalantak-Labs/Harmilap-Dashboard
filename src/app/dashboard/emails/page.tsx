@@ -511,7 +511,7 @@ function PreviewModal({ tid, company, params, onClose }: {
         <div className="modal-header">
           <div>
             <h2>Email Preview</h2>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>For: {company.company_name ?? company.isin_code}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>For: {company.company_name ?? company.isin_code ?? company.arn_number}</div>
           </div>
           <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X size={16} /></button>
         </div>
@@ -595,7 +595,7 @@ function SendSection({ variables }: { variables: Record<string, TemplateVariable
 
   const filtered = companies.filter((c) => {
     const q = compSearch.toLowerCase();
-    return !q || (c.company_name ?? "").toLowerCase().includes(q) || c.isin_code.toLowerCase().includes(q);
+    return !q || (c.company_name ?? "").toLowerCase().includes(q) || (c.isin_code ?? "").toLowerCase().includes(q) || (c.arn_number ?? "").toLowerCase().includes(q);
   });
 
   const toggleCompany = (id: string) => {
@@ -749,7 +749,7 @@ function SendSection({ variables }: { variables: Record<string, TemplateVariable
                             onClick={(e) => e.stopPropagation()} style={{ accentColor: "var(--accent)" }} />
                         </td>
                         <td style={{ fontWeight: checked ? 500 : 400, fontSize: 13 }}>{c.company_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                        <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{c.isin_code}</code></td>
+                        <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{c.isin_code ?? c.arn_number}</code></td>
                         <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
                           {/* Company list doesn't include email_ids, so just show availability indicator */}
                           <span style={{ fontSize: 11 }}>in record</span>

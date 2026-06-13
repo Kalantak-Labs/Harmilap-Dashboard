@@ -376,18 +376,19 @@ async def send_emails_endpoint(
             benefs, rd = await _beneficiaries(company.isin_code, db)
             effective_date = body.report_date or rd
             inv_no: str | None = None
+            key = company.isin_code or company.arn_number
 
             if body.email_type == "benpos":
                 pdf_bytes = generate_benpos_pdf(_cdict(company), benefs, rd)
-                filename = f"BENPOS_{company.isin_code}.pdf"
+                filename = f"BENPOS_{key}.pdf"
             elif body.email_type == "reconciliation":
                 pdf_bytes = generate_report_pdf(_cdict(company), effective_date,
                                                 ref_prefix=body.ref_prefix)
-                filename = f"Reconciliation_{company.isin_code}.pdf"
+                filename = f"Reconciliation_{key}.pdf"
             else:  # invoice
                 inv_no = await _next_inv_no(company, db)
                 pdf_bytes = generate_invoice_pdf(_cdict(company), cfg_dict, inv_no, date.today())
-                filename = f"Invoice_{company.isin_code}.pdf"
+                filename = f"Invoice_{key}.pdf"
 
             ctx = _build_context(company, body.email_type, rd,
                                  report_date=effective_date, ref_prefix=body.ref_prefix,

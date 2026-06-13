@@ -14,7 +14,8 @@ export interface User {
 
 export interface Company {
   id: string;
-  isin_code: string;
+  isin_code: string | null;
+  arn_number: string | null;
   company_name: string | null;
   nsdl_rta_code: string | null;
   cdsl_rta_code: string | null;
@@ -47,7 +48,8 @@ export interface Company {
 
 export interface CompanyListItem {
   id: string;
-  isin_code: string;
+  isin_code: string | null;
+  arn_number: string | null;
   company_name: string | null;
   nsdl_rta_code: string | null;
   cdsl_rta_code: string | null;

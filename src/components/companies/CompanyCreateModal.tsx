@@ -14,7 +14,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   const [loading, setLoading] = useState(false);
   const [secAutoFilled, setSecAutoFilled] = useState(false);
   const [form, setForm] = useState({
-    isin_code: "", company_name: "", nsdl_rta_code: "", cdsl_rta_code: "",
+    isin_code: "", arn_number: "", company_name: "", nsdl_rta_code: "", cdsl_rta_code: "",
     email_ids: [] as string[], contact_numbers: [] as string[],
     authorized_person_name: "", authorized_person_designation: "",
     gst_number: "", tan_number: "", pan_number: "",
@@ -44,12 +44,14 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   };
 
   const isinLen = form.isin_code.trim().length;
+  const isinEntered = isinLen > 0;
+  const hasArn = form.arn_number.trim().length > 0;
   const isinValid = isinLen === 12 && /^[A-Z0-9]{12}$/.test(form.isin_code.trim().toUpperCase());
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.isin_code.trim()) { push("error", "ISIN Code is required"); return; }
-    if (!isinValid) { push("error", "ISIN must be exactly 12 alphanumeric characters"); return; }
+    if (!isinEntered && !hasArn) { push("error", "Enter an ISIN code or an ARN number"); return; }
+    if (isinEntered && !isinValid) { push("error", "ISIN must be exactly 12 alphanumeric characters"); return; }
     setLoading(true);
     try {
       await api.companies.create({
@@ -80,20 +82,35 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Core</div>
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label required">ISIN Code</label>
+                <label className="form-label">ISIN Code</label>
                 <input
                   className="input"
                   value={form.isin_code}
                   onChange={(e) => handleIsinChange(e.target.value.toUpperCase())}
                   placeholder="INE000000000"
-                  required
                   style={isinLen > 0 && !isinValid ? { borderColor: "var(--danger)" } : undefined}
                 />
-                {isinLen > 0 && (
+                {isinLen > 0 ? (
                   <div style={{ fontSize: 11, marginTop: 3, color: isinValid ? "var(--success, #16a34a)" : "var(--danger)" }}>
                     {isinLen}/12{isinValid ? " — valid format" : isinLen > 12 ? " — too long" : " — must be 12 alphanumeric characters"}
                   </div>
+                ) : (
+                  <div style={{ fontSize: 11, marginTop: 3, color: "var(--text-muted)" }}>
+                    Provide an ISIN or an ARN number
+                  </div>
                 )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">ARN Number</label>
+                <input
+                  className="input"
+                  value={form.arn_number}
+                  onChange={(e) => set("arn_number", e.target.value.toUpperCase())}
+                  placeholder="ARN-12345"
+                />
+                <div style={{ fontSize: 11, marginTop: 3, color: "var(--text-muted)" }}>
+                  Used as the key when no ISIN is available
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Company Name</label>

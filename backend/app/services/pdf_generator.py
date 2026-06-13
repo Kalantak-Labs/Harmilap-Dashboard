@@ -300,7 +300,7 @@ def generate_benpos_pdf(
 
     # BENPOS title
     rd_str        = record_date.strftime("%d.%m.%Y") if record_date else "N/A"
-    isin          = company.get("isin_code", "")
+    isin          = company.get("isin_code") or ""
     security_type = (company.get("security_type") or "EQUITY").upper()
     sec_display   = security_type.replace("SHARES", "shares")
     story.append(P(f"BENPOS as on {rd_str} for {sec_display} ISIN: {isin}", s_red_c))
@@ -411,7 +411,7 @@ def generate_report_pdf(
                   e.g. "2026-27/NSDL/MAR26". Auto-generated if None.
     gen_date    : the "Date:" field (report generation date). Defaults to today.
     """
-    isin     = company.get("isin_code", "")
+    isin     = company.get("isin_code") or company.get("arn_number") or ""
     name     = (company.get("company_name") or isin).upper()
     sec_type = (company.get("security_type") or "EQUITY").upper()
     today    = gen_date or date.today()

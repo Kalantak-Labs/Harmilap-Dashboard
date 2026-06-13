@@ -150,7 +150,7 @@ export default function CompaniesPage() {
           <input
             className="input input-sm"
             style={{ paddingLeft: 32 }}
-            placeholder="Search name, ISIN, RTA code, PAN…"
+            placeholder="Search name, ISIN, ARN, RTA code, PAN…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setSkip(0); }}
           />
@@ -192,7 +192,7 @@ export default function CompaniesPage() {
             <thead>
               <tr>
                 <th>Company Name</th>
-                <th>ISIN Code</th>
+                <th>ISIN / ARN</th>
                 <th>NSDL RTA</th>
                 <th>CDSL RTA</th>
                 <th>Security Type</th>
@@ -216,7 +216,15 @@ export default function CompaniesPage() {
               ) : companies.map((c) => (
                 <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => window.location.href = `/dashboard/companies/${c.id}`}>
                   <td style={{ fontWeight: 500 }}>{c.company_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                  <td><code style={{ fontSize: 12, background: "var(--bg)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>{c.isin_code}</code></td>
+                  <td>
+                    {c.isin_code ? (
+                      <code style={{ fontSize: 12, background: "var(--bg)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>{c.isin_code}</code>
+                    ) : c.arn_number ? (
+                      <code style={{ fontSize: 12, background: "var(--bg)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>{c.arn_number}<span style={{ color: "var(--text-muted)", marginLeft: 4 }}>ARN</span></code>
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>—</span>
+                    )}
+                  </td>
                   <td style={{ fontSize: 12 }}>{c.nsdl_rta_code ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td style={{ fontSize: 12 }}>{c.cdsl_rta_code ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td>{c.security_type ? <span className="badge badge-gray">{c.security_type}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
