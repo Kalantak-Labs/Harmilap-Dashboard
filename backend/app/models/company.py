@@ -47,6 +47,7 @@ class Company(Base):
 
     # Share details
     security_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    face_value: Mapped[float | None] = mapped_column(nullable=True)
     total_shares: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     has_nsdl_shares: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     nsdl_shares: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

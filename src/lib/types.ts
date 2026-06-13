@@ -34,6 +34,7 @@ export interface Company {
   reg_pin_code: string | null;
   billing_address: string | null;
   security_type: string | null;
+  face_value: number | null;
   total_shares: number | null;
   has_nsdl_shares: boolean;
   nsdl_shares: number | null;
@@ -54,6 +55,7 @@ export interface CompanyListItem {
   nsdl_rta_code: string | null;
   cdsl_rta_code: string | null;
   security_type: string | null;
+  face_value: number | null;
   total_shares: number | null;
   has_nsdl_shares: boolean;
   has_cdsl_shares: boolean;

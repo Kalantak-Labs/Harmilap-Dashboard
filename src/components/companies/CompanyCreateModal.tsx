@@ -20,7 +20,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     gst_number: "", tan_number: "", pan_number: "",
     reg_address_line1: "", reg_address_line2: "", reg_address_line3: "", reg_address_line4: "",
     reg_city: "", reg_pin_code: "", billing_address: "",
-    security_type: "",
+    security_type: "", face_value: "",
     total_shares: "", has_nsdl_shares: false, nsdl_shares: "",
     has_cdsl_shares: false, cdsl_shares: "", physical_shares: "",
   });
@@ -56,6 +56,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     try {
       await api.companies.create({
         ...form,
+        face_value: form.face_value ? Number(form.face_value) : null,
         total_shares: form.total_shares ? Number(form.total_shares) : null,
         nsdl_shares: form.nsdl_shares ? Number(form.nsdl_shares) : null,
         cdsl_shares: form.cdsl_shares ? Number(form.cdsl_shares) : null,
@@ -137,6 +138,10 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                     Auto-detected from ISIN — edit freely
                   </div>
                 )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Face Value (₹)</label>
+                <input className="input" type="number" min="0" step="any" value={form.face_value ?? ""} onChange={(e) => set("face_value", e.target.value)} />
               </div>
             </div>
 

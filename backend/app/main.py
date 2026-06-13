@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI):
             "ADD COLUMN IF NOT EXISTS cdsl_rta_code VARCHAR(50)"
         ))
 
+        # companies: face value column
+        await conn.execute(text(
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS face_value DOUBLE PRECISION"
+        ))
+
         # companies: ARN as an alternative key — ISIN is no longer mandatory
         await conn.execute(text(
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS arn_number VARCHAR(50)"

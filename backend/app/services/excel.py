@@ -47,6 +47,7 @@ COLUMN_MAP: dict[str, str] = {
     "Pin Code": "reg_pin_code",
     "Billing Address": "billing_address",
     "Security Type": "security_type",
+    "Face Value": "face_value",
     "Total Shares": "total_shares",
     "Has NSDL Shares?": "has_nsdl_shares",
     "NSDL Shares": "nsdl_shares",
@@ -67,7 +68,7 @@ EXPORT_COLUMNS_POST = [
     "authorized_person_name", "authorized_person_designation",
     "gst_number", "tan_number", "pan_number",
     "reg_address_line1", "reg_address_line2", "reg_address_line3", "reg_address_line4",
-    "reg_city", "reg_pin_code", "billing_address", "security_type",
+    "reg_city", "reg_pin_code", "billing_address", "security_type", "face_value",
     "total_shares", "has_nsdl_shares", "nsdl_shares",
     "has_cdsl_shares", "cdsl_shares", "physical_shares",
 ]
@@ -77,7 +78,7 @@ EXPORT_HEADERS_POST = [
     "Authorized Person name", "Designation of Authorized Person",
     "GST number", "TAN number", "PAN number",
     "Address Line 1", "Address Line 2", "Address Line 3", "Address Line 4",
-    "City", "Pin Code", "Billing Address", "Security Type",
+    "City", "Pin Code", "Billing Address", "Security Type", "Face Value",
     "Total Shares", "Has NSDL Shares?", "NSDL Shares",
     "Has CDSL Shares?", "CDSL Shares", "Physical Shares",
 ]

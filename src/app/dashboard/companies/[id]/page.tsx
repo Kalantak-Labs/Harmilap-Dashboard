@@ -12,6 +12,7 @@ import type { Company } from "@/lib/types";
 import { securityTypeFromISIN } from "@/lib/isin";
 
 type EditState = Partial<Company> & {
+  face_value?: string | number | null;
   total_shares?: string | number | null;
   nsdl_shares?: string | number | null;
   cdsl_shares?: string | number | null;
@@ -63,6 +64,7 @@ export default function CompanyDetailPage() {
     try {
       const updated = await api.companies.update(id, {
         ...form,
+        face_value: form.face_value != null && String(form.face_value) !== "" ? Number(form.face_value) : null,
         total_shares: form.total_shares != null && String(form.total_shares) !== "" ? Number(form.total_shares) : null,
         nsdl_shares: form.nsdl_shares != null && String(form.nsdl_shares) !== "" ? Number(form.nsdl_shares) : null,
         cdsl_shares: form.cdsl_shares != null && String(form.cdsl_shares) !== "" ? Number(form.cdsl_shares) : null,
@@ -199,6 +201,7 @@ export default function CompanyDetailPage() {
           <Field label="NSDL RTA Code" value={editing ? inp("nsdl_rta_code") : company.nsdl_rta_code} />
           <Field label="CDSL RTA Code" value={editing ? inp("cdsl_rta_code") : company.cdsl_rta_code} />
           <Field label="Security Type" value={editing ? inp("security_type") : company.security_type ? <span className="badge badge-gray">{company.security_type}</span> : null} />
+          <Field label="Face Value" value={editing ? inp("face_value", "number") : company.face_value != null ? `₹${company.face_value}` : null} />
         </div>
 
         {/* Section: Contact */}

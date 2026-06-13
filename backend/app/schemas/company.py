@@ -53,6 +53,7 @@ class CompanyBase(BaseModel):
     reg_pin_code: str | None = None
     billing_address: str | None = None
     security_type: str | None = None
+    face_value: float | None = None
     total_shares: int | None = None
     has_nsdl_shares: bool = False
     nsdl_shares: int | None = None
@@ -105,6 +106,7 @@ class CompanyUpdate(BaseModel):
     reg_pin_code: str | None = None
     billing_address: str | None = None
     security_type: str | None = None
+    face_value: float | None = None
     total_shares: int | None = None
     has_nsdl_shares: bool | None = None
     nsdl_shares: int | None = None
@@ -146,6 +148,7 @@ class CompanyListOut(BaseModel):
     nsdl_rta_code: str | None
     cdsl_rta_code: str | None
     security_type: str | None
+    face_value: float | None
     total_shares: int | None
     has_nsdl_shares: bool
     has_cdsl_shares: bool
