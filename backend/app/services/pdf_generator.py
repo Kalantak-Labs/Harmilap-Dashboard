@@ -34,6 +34,7 @@ BLUE      = HexColor("#1F4E79")
 GRAY_MID  = HexColor("#BFBFBF")
 GRAY_LITE = HexColor("#D9D9D9")
 PEACH     = HexColor("#FCE4D6")
+SKY_BLUE  = HexColor("#DAEEF3")
 DARK      = HexColor("#404040")
 WHITE     = HexColor("#FFFFFF")
 BLACK     = HexColor("#000000")
@@ -343,10 +344,11 @@ def generate_benpos_pdf(
     ])
 
     n = len(rows)
+    row_bg = SKY_BLUE if dep_label == "CDSL" else PEACH
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(_ts(
         ("BACKGROUND", (0, 0),  (-1, 0),      GRAY_MID),
-        ("BACKGROUND", (0, 1),  (-1, n - 1),  PEACH),
+        ("BACKGROUND", (0, 1),  (-1, n - 1),  row_bg),
         ("ALIGN",      (0, 0),  (-1, 0),      "CENTER"),
         ("ALIGN",      (0, 1),  (0, -1),      "RIGHT"),
         ("ALIGN",      (2, 1),  (2, -1),      "RIGHT"),
