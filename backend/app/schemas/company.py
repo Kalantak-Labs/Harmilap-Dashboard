@@ -71,13 +71,12 @@ class CompanyBase(BaseModel):
     def validate_arn(cls, v: str | None) -> str | None:
         return _normalize_arn(v)
 
+
+class CompanyCreate(CompanyBase):
     @field_validator("total_shares", "nsdl_shares", "cdsl_shares", "physical_shares")
     @classmethod
     def validate_shares(cls, v: int | None) -> int | None:
         return _non_negative(v)
-
-
-class CompanyCreate(CompanyBase):
     @model_validator(mode="after")
     def require_isin_or_arn(self) -> "CompanyCreate":
         if not self.isin_code and not self.arn_number:
