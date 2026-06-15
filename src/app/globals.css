@@ -82,8 +82,10 @@ tbody tr:hover { background: var(--bg); }
 .modal-lg { max-width: 800px; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
 .modal-header h2 { font-size: 16px; font-weight: 600; }
-.modal-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
-.modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+/* When a <form> wraps the body + footer, it must fill the modal so the body can scroll and the footer stays pinned. */
+.modal > form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
 
 /* Toast */
 .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
