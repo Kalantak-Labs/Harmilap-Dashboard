@@ -688,6 +688,15 @@ def generate_invoice_pdf(
     story.append(bill)
     story.append(SP(6))
 
+    # ── ISINs covered (company-level invoice spans all the issuer's ISINs) ─────
+    isins = [i for i in (company.get("isins") or []) if i]
+    if isins:
+        story.append(P(
+            f"<b>ISIN(s) Covered ({len(isins)}):</b> {', '.join(isins)}",
+            _s("isn", size=9, leading=12),
+        ))
+        story.append(SP(6))
+
     # ── Service items table ───────────────────────────────────────────────────
     svc_rows = [
         [P("S. No.", s_cb), P("Description of Services", s_cb),

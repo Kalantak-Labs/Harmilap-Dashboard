@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Download, FileText, Search, Settings, X, RefreshCw, Calendar } from "lucide-react";
+import { Download, FileText, Search, X, RefreshCw, Calendar } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
 import type { CompanyListItem } from "@/lib/types";
 
-type ReportType = "benpos" | "reconciliation" | "invoice";
+type ReportType = "benpos" | "reconciliation";
 
 const REPORT_META: Record<ReportType, { label: string; desc: string; color: string; filename: (isin: string) => string }> = {
   benpos: {
@@ -22,12 +20,6 @@ const REPORT_META: Record<ReportType, { label: string; desc: string; color: stri
     desc: "Share capital reconciliation: NSDL / CDSL / Physical breakdown with percentages.",
     color: "#16a34a",
     filename: (isin) => `Reconciliation_${isin}.pdf`,
-  },
-  invoice: {
-    label: "Tax Invoice",
-    desc: "GST tax invoice for RTA annual maintenance charges.",
-    color: "#d97706",
-    filename: (isin) => `Invoice_${isin}.pdf`,
   },
 };
 
@@ -50,9 +42,7 @@ function defaultReconParams(): ReconParams {
 }
 
 export default function ReportsPage() {
-  const { can, isAdmin } = useAuth();
   const { push } = useToast();
-  const router = useRouter();
 
   const [companies, setCompanies] = useState<CompanyListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -105,16 +95,12 @@ export default function ReportsPage() {
       setBenposModal({ companyId, isin });
       return;
     }
-    const depository = type === "benpos"
-      ? (company?.has_cdsl_shares ? "CDSL" : company?.has_nsdl_shares ? "NSDL" : undefined)
-      : undefined;
+    const depository = company?.has_cdsl_shares ? "CDSL" : company?.has_nsdl_shares ? "NSDL" : undefined;
     const key = `${type}:${companyId}`;
     setGenerating(key);
     try {
-      const url = type === "benpos"
-        ? api.reports.downloadBenpos(companyId, depository)
-        : api.reports.downloadInvoice(companyId);
-      const filename = type === "benpos" && depository
+      const url = api.reports.downloadBenpos(companyId, depository);
+      const filename = depository
         ? `BENPOS_${isin}_${depository}.pdf`
         : REPORT_META[type].filename(isin);
       await api.reports.generate(url, filename);
@@ -149,13 +135,10 @@ export default function ReportsPage() {
     const key = `${type}:bulk`;
     setGenerating(key);
     try {
-      const url = type === "benpos"
-        ? api.reports.downloadBenposBulk()
-        : api.reports.downloadInvoiceBulk();
+      const url = api.reports.downloadBenposBulk();
       const filenames: Record<ReportType, string> = {
         benpos: "BENPOS_Bulk.zip",
         reconciliation: "Reconciliation_Bulk.zip",
-        invoice: "Invoices_Bulk.zip",
       };
       await api.reports.generate(url, filenames[type]);
     } catch (e: unknown) {
@@ -300,17 +283,10 @@ export default function ReportsPage() {
             Generate PDFs per company or in bulk
           </div>
         </div>
-        <div className="page-header-actions">
-          {(isAdmin || can("editor")) && (
-            <button className="btn btn-secondary" onClick={() => router.push("/dashboard/reports/invoice-config")}>
-              <Settings size={15} /> Invoice Config
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Bulk generation cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 20 }}>
         {(Object.keys(REPORT_META) as ReportType[]).map((type) => {
           const meta = REPORT_META[type];
           const key = `${type}:bulk`;
@@ -366,14 +342,13 @@ export default function ReportsPage() {
                 <th>Security Type</th>
                 <th style={{ textAlign: "center" }}>BENPOS</th>
                 <th style={{ textAlign: "center" }}>Reconciliation</th>
-                <th style={{ textAlign: "center" }}>Tax Invoice</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6}><div className="spinner-center"><span className="spinner" /></div></td></tr>
+                <tr><td colSpan={5}><div className="spinner-center"><span className="spinner" /></div></td></tr>
               ) : companies.length === 0 ? (
-                <tr><td colSpan={6}>
+                <tr><td colSpan={5}>
                   <div className="empty-state"><FileText size={28} /><div>No companies found</div></div>
                 </td></tr>
               ) : companies.map((c) => (
@@ -381,7 +356,7 @@ export default function ReportsPage() {
                   <td style={{ fontWeight: 500 }}>{c.company_name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td><code style={{ fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>{c.isin_code ?? c.arn_number}</code></td>
                   <td>{c.security_type ? <span className="badge badge-gray">{c.security_type}</span> : "—"}</td>
-                  {(["benpos", "reconciliation", "invoice"] as ReportType[]).map((type) => {
+                  {(["benpos", "reconciliation"] as ReportType[]).map((type) => {
                     const key = `${type}:${c.id}`;
                     const busy = generating === key;
                     return (

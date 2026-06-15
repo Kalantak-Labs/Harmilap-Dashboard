@@ -7,8 +7,6 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import type { InvoiceConfig, InvoiceLineItem } from "@/lib/types";
 
-const PLACEHOLDER_VARS = "{fy}, {prev_fy}, {prev2_fy}";
-
 export default function InvoiceConfigPage() {
   const { push } = useToast();
   const router = useRouter();
@@ -17,7 +15,7 @@ export default function InvoiceConfigPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.reports.getInvoiceConfig()
+    api.invoices.getConfig()
       .then(setConfig)
       .catch(() => push("error", "Failed to load config"))
       .finally(() => setLoading(false));
@@ -47,8 +45,8 @@ export default function InvoiceConfigPage() {
     if (!config) return;
     setSaving(true);
     try {
-      await api.reports.updateInvoiceConfig(config);
-      push("success", "Invoice config saved");
+      await api.invoices.updateConfig(config);
+      push("success", "Particulars template saved");
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -76,21 +74,21 @@ export default function InvoiceConfigPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => router.back()}><ArrowLeft size={16} /></button>
           <div>
-            <h2>Invoice Config</h2>
+            <h2>Particulars Template</h2>
             <div style={{ color: "var(--text-secondary)", fontSize: 12, marginTop: 1 }}>
-              Configure line items and GST for all Tax Invoice PDFs
+              Default particulars + GST applied to new invoices. Amounts are editable per company.
             </div>
           </div>
         </div>
         <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? <span className="spinner" /> : <Check size={14} />} Save Config
+          {saving ? <span className="spinner" /> : <Check size={14} />} Save Template
         </button>
       </div>
 
       {/* Line items */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>Service Line Items</span>
+          <span>Particulars</span>
           <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
             Use <code>{"{fy}"}</code>, <code>{"{prev_fy}"}</code>, <code>{"{prev2_fy}"}</code> in descriptions for auto fiscal year substitution
           </div>
@@ -98,10 +96,8 @@ export default function InvoiceConfigPage() {
         <div style={{ padding: "0 18px" }}>
           {config.line_items.map((item, idx) => (
             <div key={item.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr 130px 110px auto auto auto", gap: 8, alignItems: "center", padding: "10px 0", borderBottom: idx < config.line_items.length - 1 ? "1px solid var(--border-muted)" : "none" }}>
-              {/* Drag handle placeholder */}
               <div style={{ color: "var(--text-muted)", cursor: "grab" }}><GripVertical size={14} /></div>
 
-              {/* Description */}
               <input
                 className="input input-sm"
                 placeholder="Description (supports {fy} etc.)"
@@ -109,7 +105,6 @@ export default function InvoiceConfigPage() {
                 onChange={(e) => updateItem(item.id, { description: e.target.value })}
               />
 
-              {/* SAC Code */}
               <input
                 className="input input-sm"
                 placeholder="SAC Code"
@@ -117,7 +112,6 @@ export default function InvoiceConfigPage() {
                 onChange={(e) => updateItem(item.id, { sac_code: e.target.value })}
               />
 
-              {/* Amount */}
               <div style={{ position: "relative" }}>
                 <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--text-muted)" }}>₹</span>
                 <input
@@ -131,19 +125,16 @@ export default function InvoiceConfigPage() {
                 />
               </div>
 
-              {/* Red (outstanding) toggle */}
               <label title="Show in red (for outstanding/conditional items)" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: item.is_red ? "#C00000" : "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
                 <input type="checkbox" checked={item.is_red} onChange={(e) => updateItem(item.id, { is_red: e.target.checked })} style={{ accentColor: "#C00000" }} />
                 Red
               </label>
 
-              {/* Enabled toggle */}
               <label title="Include in invoice" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: item.enabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer" }}>
                 <input type="checkbox" checked={item.enabled} onChange={(e) => updateItem(item.id, { enabled: e.target.checked })} style={{ accentColor: "var(--accent)" }} />
                 {item.enabled ? "On" : "Off"}
               </label>
 
-              {/* Delete */}
               <button className="btn btn-ghost btn-sm btn-icon" onClick={() => removeItem(item.id)} style={{ color: "var(--danger)" }}>
                 <Trash2 size={13} />
               </button>
@@ -151,14 +142,14 @@ export default function InvoiceConfigPage() {
           ))}
         </div>
         <div style={{ padding: "10px 18px" }}>
-          <button className="btn btn-ghost btn-sm" onClick={addItem}><Plus size={13} /> Add line item</button>
+          <button className="btn btn-ghost btn-sm" onClick={addItem}><Plus size={13} /> Add particular</button>
         </div>
       </div>
 
       {/* GST config */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13 }}>
-          GST Configuration
+          Default GST Configuration
         </div>
         <div style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
           <div className="form-group" style={{ margin: 0 }}>

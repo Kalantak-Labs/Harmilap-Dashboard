@@ -164,6 +164,58 @@ export interface InvoiceConfig {
   sgst_rate: number;
 }
 
+// Company-level tax invoices (keyed by RTA code)
+export type Particular = InvoiceLineItem;
+
+export interface PartyListItem {
+  party_key: string;
+  nsdl_rta_code: string | null;
+  cdsl_rta_code: string | null;
+  company_name: string | null;
+  isin_count: number;
+  isins: string[];
+  invoice_no: string | null;
+  grand_total: number;
+  payment_status: boolean;
+  payment_date: string | null;
+  amount_paid: number | null;
+  has_record: boolean;
+}
+
+export interface Invoice {
+  id: string | null;
+  party_key: string;
+  nsdl_rta_code: string | null;
+  cdsl_rta_code: string | null;
+  company_name: string | null;
+  pan_number: string | null;
+  gst_number: string | null;
+  billing_address: string | null;
+  isins: string[];
+  particulars: Particular[];
+  gst_type: "IGST" | "CGST_SGST";
+  igst_rate: number;
+  cgst_rate: number;
+  sgst_rate: number;
+  invoice_no: string | null;
+  fiscal_year: string | null;
+  payment_status: boolean;
+  payment_date: string | null;
+  amount_paid: number | null;
+  grand_total: number;
+}
+
+export interface InvoiceUpdate {
+  particulars?: Particular[];
+  gst_type?: "IGST" | "CGST_SGST";
+  igst_rate?: number;
+  cgst_rate?: number;
+  sgst_rate?: number;
+  payment_status?: boolean;
+  payment_date?: string | null;
+  amount_paid?: number | null;
+}
+
 export interface ZipIngestResult {
   files_processed: number;
   files_skipped: number;

@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, EmailSettings, EmailTemplate  # ensure models are registered
-from app.routes import auth, users, companies, beneficiaries, reports, emails
+from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, EmailSettings, EmailTemplate  # ensure models are registered
+from app.routes import auth, users, companies, beneficiaries, reports, emails, invoices
 
 
 @asynccontextmanager
@@ -107,6 +107,7 @@ app.include_router(users.router)
 app.include_router(companies.router)
 app.include_router(beneficiaries.router)
 app.include_router(reports.router)
+app.include_router(invoices.router)
 app.include_router(emails.router)
 
 

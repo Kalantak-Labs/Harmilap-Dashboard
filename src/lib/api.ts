@@ -135,11 +135,6 @@ export const api = {
   },
 
   reports: {
-    getInvoiceConfig: () =>
-      request<import("./types").InvoiceConfig>("/reports/invoice-config"),
-    updateInvoiceConfig: (body: import("./types").InvoiceConfig) =>
-      request<{ ok: boolean }>("/reports/invoice-config", { method: "PUT", body: JSON.stringify(body) }),
-
     downloadBenpos:             (id: string, depository?: string) => `${BASE}/reports/benpos/${id}${depository ? `?depository=${depository}` : ""}`,
     downloadReconciliation:     (id: string, params?: { report_date?: string; ref_prefix?: string }) => {
       const qs = new URLSearchParams();
@@ -148,7 +143,6 @@ export const api = {
       const q = qs.toString();
       return `${BASE}/reports/reconciliation/${id}${q ? `?${q}` : ""}`;
     },
-    downloadInvoice:            (id: string) => `${BASE}/reports/invoice/${id}`,
     downloadBenposBulk:         ()           => `${BASE}/reports/benpos-bulk`,
     downloadReconciliationBulk: (params?: { report_date?: string; ref_prefix?: string }) => {
       const qs = new URLSearchParams();
@@ -157,7 +151,6 @@ export const api = {
       const q = qs.toString();
       return `${BASE}/reports/reconciliation-bulk${q ? `?${q}` : ""}`;
     },
-    downloadInvoiceBulk:        ()           => `${BASE}/reports/invoice-bulk`,
 
     generate: async (url: string, filename: string) => {
       const token = localStorage.getItem("access_token");
@@ -168,6 +161,57 @@ export const api = {
       a.href = URL.createObjectURL(blob);
       a.download = filename;
       a.click();
+    },
+  },
+
+  invoices: {
+    getConfig: () =>
+      request<import("./types").InvoiceConfig>("/invoices/config"),
+    updateConfig: (body: import("./types").InvoiceConfig) =>
+      request<{ ok: boolean }>("/invoices/config", { method: "PUT", body: JSON.stringify(body) }),
+
+    listParties: (search?: string) => {
+      const q = search ? `?search=${encodeURIComponent(search)}` : "";
+      return request<import("./types").PartyListItem[]>(`/invoices/parties${q}`);
+    },
+    getInvoice: (partyKey: string) =>
+      request<import("./types").Invoice>(`/invoices/parties/${encodeURIComponent(partyKey)}`),
+    updateInvoice: (partyKey: string, body: import("./types").InvoiceUpdate) =>
+      request<import("./types").Invoice>(`/invoices/parties/${encodeURIComponent(partyKey)}`, { method: "PUT", body: JSON.stringify(body) }),
+
+    pdfUrl:  (partyKey: string) => `${BASE}/invoices/parties/${encodeURIComponent(partyKey)}/pdf`,
+    bulkUrl: ()                 => `${BASE}/invoices/bulk-pdf`,
+
+    // Authenticated GET blob download (Excel export)
+    exportExcel: async () => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`${BASE}/invoices/export`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "Invoices.xlsx";
+      a.click();
+    },
+
+    // Upload Excel of parties → returns ZIP of generated invoices
+    importZip: async (file: File) => {
+      const token = localStorage.getItem("access_token");
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${BASE}/invoices/import-zip`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!res.ok) throw new Error("Import failed");
+      const summary = res.headers.get("X-Import-Summary") || "";
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "Invoices.zip";
+      a.click();
+      return summary;
     },
   },
 
