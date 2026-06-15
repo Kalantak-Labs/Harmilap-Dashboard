@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, Date
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -60,4 +60,5 @@ class InvoiceConfig(Base):
     igst_rate = Column(Float, nullable=False, default=18.0)
     cgst_rate = Column(Float, nullable=False, default=9.0)
     sgst_rate = Column(Float, nullable=False, default=9.0)
+    invoice_date = Column(Date, nullable=True)  # configurable invoice date; falls back to today
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

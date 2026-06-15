@@ -13,11 +13,11 @@ import type { PartyListItem, Invoice, Particular } from "@/lib/types";
 
 function computeTotal(
   particulars: Particular[], gstType: string,
-  igst: number, cgst: number, sgst: number,
+  igst: number, cgst: number, sgst: number, units = 1,
 ): number {
   const enabled = particulars.filter((p) => p.enabled);
-  const taxable = enabled.filter((p) => !p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0);
-  const nonTax = enabled.filter((p) => p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0);
+  const taxable = enabled.filter((p) => !p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0) * units;
+  const nonTax = enabled.filter((p) => p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0) * units;
   const gst = gstType === "IGST"
     ? Math.round(taxable * igst / 100)
     : Math.round(taxable * cgst / 100) + Math.round(taxable * sgst / 100);
@@ -25,6 +25,8 @@ function computeTotal(
 }
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+const fmtDate = (s: string | null) =>
+  s ? new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
 
 export default function InvoicesPage() {
   const { can } = useAuth();
@@ -75,6 +77,7 @@ export default function InvoicesPage() {
         api.invoices.pdfUrl(party.party_key),
         `Invoice_${party.company_name || party.party_key}.pdf`,
       );
+      load(); // refresh invoice no + last generated timestamp
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -167,8 +170,9 @@ export default function InvoicesPage() {
     }
   };
 
+  const editUnits = editing?.isin_count || 1;
   const editTotal = editing
-    ? computeTotal(editing.particulars, editing.gst_type, editing.igst_rate, editing.cgst_rate, editing.sgst_rate)
+    ? computeTotal(editing.particulars, editing.gst_type, editing.igst_rate, editing.cgst_rate, editing.sgst_rate, editUnits)
     : 0;
 
   return (
@@ -197,7 +201,10 @@ export default function InvoicesPage() {
             )}
 
             {/* Particulars */}
-            <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-muted)", marginBottom: 8 }}>Particulars</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-muted)" }}>Particulars <span style={{ textTransform: "none", fontWeight: 400 }}>(amounts are per ISIN)</span></div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>× <b>{editUnits}</b> ISIN unit(s) on the invoice</div>
+            </div>
             {editing.particulars.map((item, idx) => (
               <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px auto auto auto", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: idx < editing.particulars.length - 1 ? "1px solid var(--border-muted)" : "none" }}>
                 <input className="input input-sm" placeholder="Description" value={item.description}
@@ -347,8 +354,9 @@ export default function InvoicesPage() {
               <tr>
                 <th>Company</th>
                 <th>RTA Code(s)</th>
-                <th style={{ textAlign: "center" }}>ISINs</th>
+                <th style={{ textAlign: "center" }}>ISIN Units</th>
                 <th>Invoice No</th>
+                <th>Last Generated</th>
                 <th style={{ textAlign: "right" }}>Grand Total</th>
                 <th style={{ textAlign: "center" }}>Payment</th>
                 <th style={{ textAlign: "center" }}>Actions</th>
@@ -356,9 +364,9 @@ export default function InvoicesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7}><div className="spinner-center"><span className="spinner" /></div></td></tr>
+                <tr><td colSpan={8}><div className="spinner-center"><span className="spinner" /></div></td></tr>
               ) : parties.length === 0 ? (
-                <tr><td colSpan={7}>
+                <tr><td colSpan={8}>
                   <div className="empty-state"><Receipt size={28} /><div>No invoiceable companies found</div>
                     <div style={{ fontSize: 12 }}>Companies need an NSDL or CDSL RTA code to be invoiced</div>
                   </div>
@@ -370,8 +378,14 @@ export default function InvoicesPage() {
                     {p.nsdl_rta_code && <span className="badge badge-gray" style={{ marginRight: 4 }}>N:{p.nsdl_rta_code}</span>}
                     {p.cdsl_rta_code && <span className="badge badge-blue">C:{p.cdsl_rta_code}</span>}
                   </td>
-                  <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{p.isin_count}</td>
+                  <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}
+                    title={p.isin_count !== p.isins.length ? `${p.isins.length} ISIN(s); some active in both NSDL & CDSL count twice` : `${p.isins.length} ISIN(s)`}>
+                    {p.isin_count}
+                  </td>
                   <td style={{ fontSize: 12 }}>{p.invoice_no ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                  <td style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                    {fmtDate(p.last_generated_at) ?? <span style={{ color: "var(--text-muted)" }}>Never</span>}
+                  </td>
                   <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{inr(p.grand_total)}</td>
                   <td style={{ textAlign: "center" }}>
                     {p.payment_status

@@ -48,6 +48,9 @@ class Invoice(Base):
     payment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     amount_paid: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Last time a PDF was generated for this invoice
+    last_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

@@ -1,5 +1,5 @@
 import io
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
@@ -34,6 +34,14 @@ async def _get_config(db: AsyncSession) -> InvoiceConfig:
     return cfg
 
 
+def _cfg_invoice_date(cfg: InvoiceConfig) -> date:
+    return getattr(cfg, "invoice_date", None) or date.today()
+
+
+def _cfg_fy(cfg: InvoiceConfig) -> str:
+    return current_fy(_cfg_invoice_date(cfg))
+
+
 class LineItem(BaseModel):
     id: int
     description: str
@@ -50,6 +58,7 @@ class InvoiceConfigBody(BaseModel):
     igst_rate: float = 18.0
     cgst_rate: float = 9.0
     sgst_rate: float = 9.0
+    invoice_date: date | None = None
 
 
 @router.get("/config")
@@ -61,6 +70,7 @@ async def get_config(
     return {
         "line_items": cfg.line_items, "gst_type": cfg.gst_type,
         "igst_rate": cfg.igst_rate, "cgst_rate": cfg.cgst_rate, "sgst_rate": cfg.sgst_rate,
+        "invoice_date": getattr(cfg, "invoice_date", None),
     }
 
 
@@ -76,6 +86,7 @@ async def update_config(
     cfg.igst_rate = body.igst_rate
     cfg.cgst_rate = body.cgst_rate
     cfg.sgst_rate = body.sgst_rate
+    cfg.invoice_date = body.invoice_date
     await db.commit()
     return {"ok": True}
 
@@ -91,6 +102,16 @@ def _rep_score(c: Company) -> int:
     fields = [c.company_name, c.pan_number, c.gst_number, c.reg_address_line1,
               c.reg_city, c.reg_pin_code, c.billing_address]
     return sum(1 for f in fields if f)
+
+
+def _isin_units(rows: list[Company]) -> int:
+    """Chargeable ISIN units: an ISIN active in both NSDL and CDSL counts as 2."""
+    units = 0
+    for r in rows:
+        if not r.isin_code:
+            continue
+        units += 2 if (r.has_nsdl_shares and r.has_cdsl_shares) else 1
+    return units or 1  # never zero — an ARN-only party is still one unit
 
 
 async def _all_parties(db: AsyncSession) -> dict[str, dict]:
@@ -124,6 +145,7 @@ async def _all_parties(db: AsyncSession) -> dict[str, dict]:
             "reg_city": rep.reg_city,
             "reg_pin_code": rep.reg_pin_code,
             "isins": isins,
+            "isin_units": _isin_units(rows),
         }
     return parties
 
@@ -152,6 +174,7 @@ async def _party_for_key(party_key: str, db: AsyncSession) -> dict:
         "reg_city": rep.reg_city,
         "reg_pin_code": rep.reg_pin_code,
         "isins": sorted({r.isin_code for r in rows if r.isin_code}),
+        "isin_units": _isin_units(rows),
     }
 
 
@@ -171,10 +194,12 @@ async def _find_invoice(party: dict, fy: str, db: AsyncSession) -> Optional[Invo
 
 
 def _grand_total(particulars: list[dict], gst_type: str,
-                 igst_rate: float, cgst_rate: float, sgst_rate: float) -> float:
+                 igst_rate: float, cgst_rate: float, sgst_rate: float,
+                 units: int = 1) -> float:
+    """Particular amounts are per-ISIN; multiply by chargeable units."""
     enabled = [p for p in particulars if p.get("enabled", True)]
-    taxable = sum(float(p.get("amount") or 0) for p in enabled if not p.get("non_taxable"))
-    non_taxable = sum(float(p.get("amount") or 0) for p in enabled if p.get("non_taxable"))
+    taxable = sum(float(p.get("amount") or 0) for p in enabled if not p.get("non_taxable")) * units
+    non_taxable = sum(float(p.get("amount") or 0) for p in enabled if p.get("non_taxable")) * units
     if gst_type == "IGST":
         gst = round(taxable * igst_rate / 100)
     else:
@@ -186,25 +211,33 @@ def _seed_particulars(cfg: InvoiceConfig) -> list[dict]:
     return [dict(it) for it in (cfg.line_items or [])]
 
 
+def _party_code(party: dict) -> str:
+    """RTA code for the invoice number — NSDL preferred, else CDSL."""
+    return party.get("nsdl_rta_code") or party.get("cdsl_rta_code") or ""
+
+
 async def _next_invoice_no(party: dict, fy: str, db: AsyncSession) -> str:
+    """Format: <financial year>/<rta code>/<serial>, e.g. 2026-27/4369/1."""
     seq = ((await db.execute(
         select(sql_func.count(Invoice.id)).where(Invoice.fiscal_year == fy)
     )).scalar() or 0) + 1
-    code = party.get("nsdl_rta_code") or party.get("cdsl_rta_code") or ""
-    return f"RTAN{code}/{seq}"
+    return f"{fy}/{_party_code(party)}/{seq}"
 
 
 def _build_out(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> InvoiceOut:
+    units = party.get("isin_units", 1)
     if inv:
         particulars = inv.particulars or []
         gst_type, igst, cgst, sgst = inv.gst_type, inv.igst_rate, inv.cgst_rate, inv.sgst_rate
         invoice_no, fy = inv.invoice_no, inv.fiscal_year
         pay_status, pay_date, amt_paid = inv.payment_status, inv.payment_date, inv.amount_paid
+        last_gen = inv.last_generated_at
     else:
         particulars = _seed_particulars(cfg)
         gst_type, igst, cgst, sgst = cfg.gst_type, cfg.igst_rate, cfg.cgst_rate, cfg.sgst_rate
-        invoice_no, fy = None, current_fy()
+        invoice_no, fy = None, _cfg_fy(cfg)
         pay_status, pay_date, amt_paid = False, None, None
+        last_gen = None
 
     return InvoiceOut(
         id=inv.id if inv else None,
@@ -216,11 +249,13 @@ def _build_out(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> Invoi
         gst_number=party.get("gst_number"),
         billing_address=party.get("billing_address"),
         isins=party.get("isins", []),
+        isin_count=units,
         particulars=[Particular(**p) for p in particulars],
         gst_type=gst_type, igst_rate=igst, cgst_rate=cgst, sgst_rate=sgst,
-        invoice_no=invoice_no, fiscal_year=fy,
+        invoice_no=invoice_no, invoice_date=_cfg_invoice_date(cfg), fiscal_year=fy,
         payment_status=pay_status, payment_date=pay_date, amount_paid=amt_paid,
-        grand_total=_grand_total(particulars, gst_type, igst, cgst, sgst),
+        last_generated_at=last_gen,
+        grand_total=_grand_total(particulars, gst_type, igst, cgst, sgst, units),
     )
 
 
@@ -244,13 +279,51 @@ def _company_dict_for_pdf(party: dict) -> dict:
 
 def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
     out = _build_out(party, inv, cfg)
+    units = party.get("isin_units", 1)
+    # Particular amounts are per-ISIN — scale to the chargeable units for the invoice.
+    line_items = []
+    for p in out.particulars:
+        d = p.model_dump()
+        d["amount"] = (d.get("amount") or 0) * units
+        line_items.append(d)
     config = {
-        "line_items": [p.model_dump() for p in out.particulars],
+        "line_items": line_items,
         "gst_type": out.gst_type, "igst_rate": out.igst_rate,
         "cgst_rate": out.cgst_rate, "sgst_rate": out.sgst_rate,
     }
-    inv_no = out.invoice_no or f"RTAN{party.get('nsdl_rta_code') or party.get('cdsl_rta_code') or ''}/1"
-    return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, date.today())
+    inv_no = out.invoice_no or f"{out.fiscal_year}/{_party_code(party)}/1"
+    return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, _cfg_invoice_date(cfg))
+
+
+async def _ensure_record(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> Invoice:
+    """Find the party's invoice for the configured FY, creating it (with number) if absent."""
+    fy = _cfg_fy(cfg)
+    inv = await _find_invoice(party, fy, db)
+    if not inv:
+        inv = Invoice(
+            nsdl_rta_code=party.get("nsdl_rta_code"),
+            cdsl_rta_code=party.get("cdsl_rta_code"),
+            particulars=_seed_particulars(cfg),
+            gst_type=cfg.gst_type, igst_rate=cfg.igst_rate,
+            cgst_rate=cfg.cgst_rate, sgst_rate=cfg.sgst_rate,
+            fiscal_year=fy,
+            invoice_no=await _next_invoice_no(party, fy, db),
+        )
+        db.add(inv)
+    elif not inv.invoice_no:
+        inv.invoice_no = await _next_invoice_no(party, fy, db)
+    return inv
+
+
+async def _generate_and_stamp(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> tuple[str, bytes]:
+    """Persist the invoice (number + last_generated_at) and render the PDF."""
+    inv = await _ensure_record(party, cfg, db)
+    inv.last_generated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(inv)
+    pdf = _pdf_for(party, inv, cfg)
+    label = party.get("company_name") or party["party_key"]
+    return f"Invoice_{label}.pdf", pdf
 
 
 def _stream_pdf(data: bytes, filename: str) -> StreamingResponse:
@@ -274,7 +347,7 @@ async def list_parties(
     _user: User = Depends(require_permission("viewer")),
 ):
     cfg = await _get_config(db)
-    fy = current_fy()
+    fy = _cfg_fy(cfg)
     parties = await _all_parties(db)
     invoices = (await db.execute(
         select(Invoice).where(Invoice.fiscal_year == fy)
@@ -305,13 +378,14 @@ async def list_parties(
             nsdl_rta_code=party.get("nsdl_rta_code"),
             cdsl_rta_code=party.get("cdsl_rta_code"),
             company_name=party.get("company_name"),
-            isin_count=len(party.get("isins", [])),
+            isin_count=party.get("isin_units", 1),
             isins=party.get("isins", []),
             invoice_no=built.invoice_no,
             grand_total=built.grand_total,
             payment_status=built.payment_status,
             payment_date=built.payment_date,
             amount_paid=built.amount_paid,
+            last_generated_at=built.last_generated_at,
             has_record=iv is not None,
         ))
     out.sort(key=lambda p: (p.company_name or p.party_key or "").lower())
@@ -326,7 +400,7 @@ async def get_invoice(
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
-    inv = await _find_invoice(party, current_fy(), db)
+    inv = await _find_invoice(party, _cfg_fy(cfg), db)
     return _build_out(party, inv, cfg)
 
 
@@ -339,20 +413,7 @@ async def upsert_invoice(
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
-    fy = current_fy()
-    inv = await _find_invoice(party, fy, db)
-
-    if not inv:
-        inv = Invoice(
-            nsdl_rta_code=party.get("nsdl_rta_code"),
-            cdsl_rta_code=party.get("cdsl_rta_code"),
-            particulars=_seed_particulars(cfg),
-            gst_type=cfg.gst_type, igst_rate=cfg.igst_rate,
-            cgst_rate=cfg.cgst_rate, sgst_rate=cfg.sgst_rate,
-            fiscal_year=fy,
-            invoice_no=await _next_invoice_no(party, fy, db),
-        )
-        db.add(inv)
+    inv = await _ensure_record(party, cfg, db)
 
     if body.particulars is not None:
         inv.particulars = [p.model_dump() for p in body.particulars]
@@ -386,10 +447,8 @@ async def invoice_pdf(
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
-    inv = await _find_invoice(party, current_fy(), db)
-    pdf = _pdf_for(party, inv, cfg)
-    name = party.get("company_name") or party_key
-    return _stream_pdf(pdf, f"Invoice_{name}.pdf")
+    filename, pdf = await _generate_and_stamp(party, cfg, db)
+    return _stream_pdf(pdf, filename)
 
 
 @router.post("/bulk-pdf")
@@ -398,19 +457,11 @@ async def invoice_bulk(
     _user: User = Depends(require_permission("can_download")),
 ):
     cfg = await _get_config(db)
-    fy = current_fy()
     parties = await _all_parties(db)
-    invoices = (await db.execute(select(Invoice).where(Invoice.fiscal_year == fy))).scalars().all()
-
     entries: list[tuple[str, bytes]] = []
     for party in parties.values():
-        iv = next((i for i in invoices if
-                   (party.get("nsdl_rta_code") and i.nsdl_rta_code == party["nsdl_rta_code"]) or
-                   (party.get("cdsl_rta_code") and i.cdsl_rta_code == party["cdsl_rta_code"])), None)
         try:
-            pdf = _pdf_for(party, iv, cfg)
-            label = party.get("company_name") or party["party_key"]
-            entries.append((f"Invoice_{label}.pdf", pdf))
+            entries.append(await _generate_and_stamp(party, cfg, db))
         except Exception:
             pass
     return _stream_zip(zip_pdfs(entries), "Invoices_Bulk.zip")
@@ -424,7 +475,7 @@ async def export_invoices(
     _user: User = Depends(require_permission("can_download")),
 ):
     cfg = await _get_config(db)
-    fy = current_fy()
+    fy = _cfg_fy(cfg)
     parties = await _all_parties(db)
     invoices = (await db.execute(select(Invoice).where(Invoice.fiscal_year == fy))).scalars().all()
     particular_names = [it.get("description", "") for it in (cfg.line_items or [])]
@@ -461,7 +512,6 @@ async def import_invoices_zip(
     _user: User = Depends(require_permission("can_download")),
 ):
     cfg = await _get_config(db)
-    fy = current_fy()
     particular_names = [it.get("description", "") for it in (cfg.line_items or [])]
     content = await file.read()
     rows, errors = parse_invoice_excel(content, particular_names)
@@ -477,21 +527,12 @@ async def import_invoices_zip(
             errors.append(f"RTA code {key}: no matching company, skipped.")
             continue
 
-        inv = await _find_invoice(party, fy, db)
-        if not inv:
-            inv = Invoice(
-                nsdl_rta_code=party.get("nsdl_rta_code"),
-                cdsl_rta_code=party.get("cdsl_rta_code"),
-                particulars=_seed_particulars(cfg),
-                gst_type=cfg.gst_type, igst_rate=cfg.igst_rate,
-                cgst_rate=cfg.cgst_rate, sgst_rate=cfg.sgst_rate,
-                fiscal_year=fy,
-                invoice_no=await _next_invoice_no(party, fy, db),
-            )
-            db.add(inv)
-            created += 1
-        else:
+        existed = await _find_invoice(party, _cfg_fy(cfg), db) is not None
+        inv = await _ensure_record(party, cfg, db)
+        if existed:
             updated += 1
+        else:
+            created += 1
 
         # Apply per-particular amounts matched by description
         amounts = row.get("particular_amounts") or {}
@@ -506,6 +547,7 @@ async def import_invoices_zip(
             inv.payment_date = row["payment_date"]
         if row.get("amount_paid") is not None:
             inv.amount_paid = row["amount_paid"]
+        inv.last_generated_at = datetime.now(timezone.utc)
 
         await db.commit()
         await db.refresh(inv)

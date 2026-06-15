@@ -149,9 +149,21 @@ export default function InvoiceConfigPage() {
       {/* GST config */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13 }}>
-          Default GST Configuration
+          Invoice Date &amp; Default GST
         </div>
         <div style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Invoice Date</label>
+            <input
+              className="input input-sm"
+              type="date"
+              value={config.invoice_date ?? ""}
+              onChange={(e) => setField("invoice_date", e.target.value || null)}
+            />
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+              Used on generated invoices &amp; their financial year. Blank = today.
+            </div>
+          </div>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">GST Type</label>
             <select
@@ -191,7 +203,7 @@ export default function InvoiceConfigPage() {
 
       {/* Preview totals */}
       <div className="card">
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13 }}>Preview Totals (enabled items)</div>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13 }}>Preview Totals (enabled items, per ISIN)</div>
         <div style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
           {[
             { label: "Taxable Value", value: taxable },

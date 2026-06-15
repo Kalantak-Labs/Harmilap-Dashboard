@@ -162,6 +162,7 @@ export interface InvoiceConfig {
   igst_rate: number;
   cgst_rate: number;
   sgst_rate: number;
+  invoice_date: string | null;
 }
 
 // Company-level tax invoices (keyed by RTA code)
@@ -172,13 +173,14 @@ export interface PartyListItem {
   nsdl_rta_code: string | null;
   cdsl_rta_code: string | null;
   company_name: string | null;
-  isin_count: number;
+  isin_count: number; // chargeable units — an ISIN in both NSDL & CDSL counts as 2
   isins: string[];
   invoice_no: string | null;
   grand_total: number;
   payment_status: boolean;
   payment_date: string | null;
   amount_paid: number | null;
+  last_generated_at: string | null;
   has_record: boolean;
 }
 
@@ -192,16 +194,19 @@ export interface Invoice {
   gst_number: string | null;
   billing_address: string | null;
   isins: string[];
+  isin_count: number; // chargeable units
   particulars: Particular[];
   gst_type: "IGST" | "CGST_SGST";
   igst_rate: number;
   cgst_rate: number;
   sgst_rate: number;
   invoice_no: string | null;
+  invoice_date: string | null;
   fiscal_year: string | null;
   payment_status: boolean;
   payment_date: string | null;
   amount_paid: number | null;
+  last_generated_at: string | null;
   grand_total: number;
 }
 
