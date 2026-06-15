@@ -274,6 +274,7 @@ def _company_dict_for_pdf(party: dict) -> dict:
         "nsdl_rta_code": party.get("nsdl_rta_code"),
         "cdsl_rta_code": party.get("cdsl_rta_code"),
         "isins": party.get("isins", []),
+        "isin_units": party.get("isin_units", 1),
     }
 
 

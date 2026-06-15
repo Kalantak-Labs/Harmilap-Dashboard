@@ -688,11 +688,12 @@ def generate_invoice_pdf(
     story.append(bill)
     story.append(SP(6))
 
-    # ── ISINs covered (company-level invoice spans all the issuer's ISINs) ─────
+    # ── Number of ISINs covered (company-level invoice spans all the issuer's ISINs) ─
     isins = [i for i in (company.get("isins") or []) if i]
-    if isins:
+    isin_count = company.get("isin_units") or len(isins)
+    if isin_count:
         story.append(P(
-            f"<b>ISIN(s) Covered ({len(isins)}):</b> {', '.join(isins)}",
+            f"<b>No. of Active ISINs:</b> {isin_count}",
             _s("isn", size=9, leading=12),
         ))
         story.append(SP(6))
@@ -757,7 +758,7 @@ def generate_invoice_pdf(
     n_svc = len(svc_rows)
     spans = [("SPAN", (0, r), (1, r)) for r in range(sub_r, n_svc)]
 
-    svc = Table(svc_rows, colWidths=[CW * 0.06, CW * 0.52, CW * 0.24, CW * 0.18], repeatRows=1)
+    svc = Table(svc_rows, colWidths=[CW * 0.07, CW * 0.62, CW * 0.13, CW * 0.18], repeatRows=1)
     svc.setStyle(_ts(
         ("BACKGROUND", (0, 0),         (-1, 0),            GRAY_MID),
         ("FONT",       (0, 0),         (-1, 0),            "Helvetica-Bold", 10),
