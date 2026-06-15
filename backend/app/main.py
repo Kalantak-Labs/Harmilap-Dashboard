@@ -26,6 +26,11 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS face_value DOUBLE PRECISION"
         ))
 
+        # companies: state column
+        await conn.execute(text(
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS state VARCHAR(100)"
+        ))
+
         # invoices: track last PDF generation time
         await conn.execute(text(
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_generated_at TIMESTAMPTZ"

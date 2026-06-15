@@ -19,7 +19,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     authorized_person_name: "", authorized_person_designation: "",
     gst_number: "", tan_number: "", pan_number: "",
     reg_address_line1: "", reg_address_line2: "", reg_address_line3: "", reg_address_line4: "",
-    reg_city: "", reg_pin_code: "", billing_address: "",
+    reg_city: "", state: "", reg_pin_code: "", billing_address: "",
     security_type: "", face_value: "",
     total_shares: "", has_nsdl_shares: false, nsdl_shares: "",
     has_cdsl_shares: false, cdsl_shares: "", physical_shares: "",
@@ -207,6 +207,10 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <input className="input" value={form.reg_city} onChange={(e) => set("reg_city", e.target.value)} />
               </div>
               <div className="form-group">
+                <label className="form-label">State</label>
+                <input className="input" value={form.state} onChange={(e) => set("state", e.target.value)} />
+              </div>
+              <div className="form-group">
                 <label className="form-label">Pin Code</label>
                 <input className="input" value={form.reg_pin_code} onChange={(e) => set("reg_pin_code", e.target.value)} />
               </div>
@@ -224,8 +228,16 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <input className="input" type="number" min="0" value={form.total_shares} onChange={(e) => set("total_shares", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">Physical Shares</label>
-                <input className="input" type="number" min="0" value={form.physical_shares} onChange={(e) => set("physical_shares", e.target.value)} />
+                <label className="form-label">Physical Shares (auto)</label>
+                <input
+                  className="input"
+                  type="number"
+                  readOnly
+                  tabIndex={-1}
+                  value={form.total_shares === "" ? "" : Number(form.total_shares || 0) - Number(form.nsdl_shares || 0) - Number(form.cdsl_shares || 0)}
+                  style={{ background: "var(--bg)", color: "var(--text-muted)" }}
+                />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>= Total − NSDL − CDSL</div>
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

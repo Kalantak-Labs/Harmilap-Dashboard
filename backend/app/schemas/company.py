@@ -50,6 +50,7 @@ class CompanyBase(BaseModel):
     reg_address_line3: str | None = None
     reg_address_line4: str | None = None
     reg_city: str | None = None
+    state: str | None = None
     reg_pin_code: str | None = None
     billing_address: str | None = None
     security_type: str | None = None
@@ -102,6 +103,7 @@ class CompanyUpdate(BaseModel):
     reg_address_line3: str | None = None
     reg_address_line4: str | None = None
     reg_city: str | None = None
+    state: str | None = None
     reg_pin_code: str | None = None
     billing_address: str | None = None
     security_type: str | None = None

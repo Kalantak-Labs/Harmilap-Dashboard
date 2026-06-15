@@ -239,6 +239,7 @@ export default function CompanyDetailPage() {
           <Field label="Line 3" value={editing ? inp("reg_address_line3") : company.reg_address_line3} />
           <Field label="Line 4" value={editing ? inp("reg_address_line4") : company.reg_address_line4} />
           <Field label="City" value={editing ? inp("reg_city") : company.reg_city} />
+          <Field label="State" value={editing ? inp("state") : company.state} />
           <Field label="Pin Code" value={editing ? inp("reg_pin_code") : company.reg_pin_code} />
         </div>
 
@@ -253,7 +254,12 @@ export default function CompanyDetailPage() {
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Share Details</div>
           <Field label="Total Shares" value={editing ? inp("total_shares", "number") : company.total_shares?.toLocaleString()} />
-          <Field label="Physical Shares" value={editing ? inp("physical_shares", "number") : company.physical_shares?.toLocaleString()} />
+          <Field label="Physical Shares (auto)" value={editing
+            ? <span style={{ color: "var(--text-muted)" }}>
+                {(Number(form.total_shares || 0) - Number(form.nsdl_shares || 0) - Number(form.cdsl_shares || 0)).toLocaleString()}
+                <span style={{ fontSize: 11, marginLeft: 6 }}>= Total − NSDL − CDSL</span>
+              </span>
+            : company.physical_shares?.toLocaleString()} />
           <Field label="Has NSDL Shares" value={editing
             ? chk("has_nsdl_shares")
             : company.has_nsdl_shares ? <span className="badge badge-green">Yes</span> : <span className="badge badge-gray">No</span>}

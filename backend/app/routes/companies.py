@@ -20,6 +20,16 @@ from app.dependencies import get_current_user, require_permission
 router = APIRouter(prefix="/companies", tags=["companies"])
 
 
+def _recalc_physical(company: Company) -> None:
+    """Physical shares are derived: total − NSDL − CDSL. None when total is unset."""
+    if company.total_shares is None:
+        company.physical_shares = None
+    else:
+        company.physical_shares = (
+            company.total_shares - (company.nsdl_shares or 0) - (company.cdsl_shares or 0)
+        )
+
+
 def _apply_search(query, search: str | None):
     if not search:
         return query
@@ -194,6 +204,7 @@ async def ingest_excel(
                 for field, value in row.items():
                     if field not in ("isin_code", "arn_number") and value is not None:
                         setattr(existing, field, value)
+                _recalc_physical(existing)
                 existing.updated_at = datetime.now(timezone.utc)
                 existing.updated_by = current_user.id
                 updated += 1
@@ -203,6 +214,7 @@ async def ingest_excel(
                     created_by=current_user.id,
                     updated_by=current_user.id,
                 )
+                _recalc_physical(company)
                 db.add(company)
                 created += 1
 
@@ -230,6 +242,7 @@ async def create_company(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"ARN {body.arn_number} already exists")
 
     company = Company(**body.model_dump(), created_by=current_user.id, updated_by=current_user.id)
+    _recalc_physical(company)
     db.add(company)
     await db.commit()
     await db.refresh(company)
@@ -307,6 +320,7 @@ async def update_company(
 
     for field, value in updates.items():
         setattr(company, field, value)
+    _recalc_physical(company)
 
     if not company.isin_code and not company.arn_number:
         raise HTTPException(

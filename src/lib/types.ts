@@ -31,6 +31,7 @@ export interface Company {
   reg_address_line3: string | null;
   reg_address_line4: string | null;
   reg_city: string | null;
+  state: string | null;
   reg_pin_code: string | null;
   billing_address: string | null;
   security_type: string | null;

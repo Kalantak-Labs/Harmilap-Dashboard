@@ -40,6 +40,7 @@ class Company(Base):
     reg_address_line3: Mapped[str | None] = mapped_column(Text, nullable=True)
     reg_address_line4: Mapped[str | None] = mapped_column(Text, nullable=True)
     reg_city: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reg_pin_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Billing address (plain text)
