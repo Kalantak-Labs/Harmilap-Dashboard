@@ -74,7 +74,8 @@ class CompanyBase(BaseModel):
 
 
 class CompanyCreate(CompanyBase):
-    @field_validator("total_shares", "nsdl_shares", "cdsl_shares", "physical_shares")
+    # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
+    @field_validator("total_shares", "nsdl_shares", "cdsl_shares")
     @classmethod
     def validate_shares(cls, v: int | None) -> int | None:
         return _non_negative(v)
@@ -125,7 +126,8 @@ class CompanyUpdate(BaseModel):
     def validate_arn(cls, v: str | None) -> str | None:
         return _normalize_arn(v)
 
-    @field_validator("total_shares", "nsdl_shares", "cdsl_shares", "physical_shares")
+    # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
+    @field_validator("total_shares", "nsdl_shares", "cdsl_shares")
     @classmethod
     def validate_shares(cls, v: int | None) -> int | None:
         return _non_negative(v)
