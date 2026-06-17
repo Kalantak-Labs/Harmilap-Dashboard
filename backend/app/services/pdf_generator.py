@@ -8,7 +8,7 @@ PDF generation for Harmilap RTA reports.
 import io
 import os
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from reportlab.lib.colors import HexColor
@@ -241,6 +241,57 @@ def _build_full(story: list, hdr_path: str, hdr_h: float) -> bytes:
     frame = Frame(MARGIN, bottom, CW, PAGE_H - top - bottom,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     tpl = PageTemplate(id="main", frames=[frame], onPage=_draw)
+    doc = BaseDocTemplate(buf, pagesize=A4, pageTemplates=[tpl])
+    doc.build(story)
+    return buf.getvalue()
+
+
+def _invoice_logo(height: float = 46):
+    """Crown logo cropped (full opacity) from the left of the letterhead asset."""
+    try:
+        from PIL import Image as PILImage
+        img = PILImage.open(A_INVOICE_HDR).convert("RGBA")
+        w, h = img.size
+        crop = img.crop((0, 0, int(w * 0.20), h))
+        out = io.BytesIO()
+        crop.save(out, "PNG")
+        out.seek(0)
+        cw_px, ch_px = crop.size
+        return Image(out, width=height * (cw_px / ch_px), height=height)
+    except Exception:
+        return Spacer(1, height)
+
+
+def _build_invoice(story: list) -> bytes:
+    """Invoice page: text header is part of the flow; only footer + watermark are painted."""
+    wm  = _watermark_data(A_INVOICE_HDR)
+    buf = io.BytesIO()
+    top    = MARGIN + 4
+    bottom = _BOTTOM + _EXTRA_BOTTOM
+
+    def _draw(canvas, _doc):
+        canvas.saveState()
+        canvas.drawImage(A_FOOTER, MARGIN, MARGIN + _EXTRA_BOTTOM,
+                         width=CW, height=_FH, preserveAspectRatio=False, mask="auto")
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(RED)
+        canvas.drawCentredString(
+            PAGE_W / 2, MARGIN + 2,
+            "Email Id: harmilaprta@gmail.com  |  "
+            "Contact No: +91-8929835991 / 9310931755 / 9205234407",
+        )
+        if wm:
+            wm_bytes, wm_w_px, wm_h_px = wm
+            reader = ImageReader(io.BytesIO(wm_bytes))
+            wm_w = 3.5 * inch
+            wm_h = wm_w * (wm_h_px / wm_w_px)
+            canvas.drawImage(reader, (PAGE_W - wm_w) / 2, (PAGE_H - wm_h) / 2,
+                             width=wm_w, height=wm_h, mask="auto")
+        canvas.restoreState()
+
+    frame = Frame(MARGIN, bottom, CW, PAGE_H - top - bottom,
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    tpl = PageTemplate(id="inv", frames=[frame], onPage=_draw)
     doc = BaseDocTemplate(buf, pagesize=A4, pageTemplates=[tpl])
     doc.build(story)
     return buf.getvalue()
@@ -620,96 +671,142 @@ def generate_invoice_pdf(
     supply_parts = list(filter(None, [company.get("reg_city"), company.get("reg_pin_code")]))
     place = ",".join(supply_parts) if supply_parts else "N/A"
 
-    s_body = _s("b",  size=10, leading=13)
-    s_bold = _s("bb", "Helvetica-Bold", 10, 13)
-    s_c    = _s("c",  size=10, leading=13, align=TA_CENTER)
-    s_r    = _s("r",  size=10, leading=13, align=TA_RIGHT)
-    s_rb   = _s("rb", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
-    s_cb   = _s("cb", "Helvetica-Bold", 10, 13, align=TA_CENTER)
-    s_red  = _s("rd", "Helvetica-Bold", 10, 13, color=RED)
-    s_sm   = _s("sm", size=8, leading=10)
-    s_smb  = _s("smb","Helvetica-Bold", 8, 10)
-    s_smj  = _s("smj", size=8, leading=10, align=TA_JUSTIFY)
-    s_sm_r = _s("smr","Helvetica-Bold", 10, 14, color=RED)
-    s_blue = _s("ibl","Helvetica-Bold", 10, 13, color=BLUE)
-    s_wh   = _s("wh", "Helvetica-Bold", 9, 12, color=WHITE, align=TA_CENTER)
-    s_wh_t = _s("wt", "Helvetica-Bold", 13, 17, color=WHITE, align=TA_CENTER)
-    s_wh_s = _s("ws", "Helvetica-Bold", 10, 13, color=WHITE, align=TA_CENTER)
-    s_sm_c = _s("smc", size=9, leading=12, align=TA_CENTER)
+    # Theme + firm constants
+    LIGHT  = HexColor("#FBE9E9")   # light red tint
+    MUTED  = HexColor("#7A7A7A")
+    FIRM_NAME  = "HARMILAP SHARE TRANSFER AGENTS"
+    FIRM_SUB   = "(SEBI Registered Category-I Registrar &amp; Share Transfer Agent)"
+    FIRM_REGS  = "SEBI Reg. No.: INR000004334  |  NSDL BP ID: IN201072  |  CDSL RTA ID: 498"
+    FIRM_IDS   = ("GSTIN: 07BETPS5667B1ZY&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+                  "PAN: BETPS5667B&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+                  "MSME Reg. No.: UDYAM-DL-04-0005989")
+
+    s_body  = _s("b",   size=9,  leading=12)
+    s_c     = _s("c",   size=9,  leading=12, align=TA_CENTER)
+    s_r     = _s("r",   size=9,  leading=12, align=TA_RIGHT)
+    s_red   = _s("rd",  "Helvetica-Bold", 9, 12, color=RED)
+    s_blue  = _s("ibl", "Helvetica-Bold", 9, 12, color=RED)
+    s_name  = _s("inm", "Helvetica-Bold", 15, 17, color=RED)
+    s_sub   = _s("isb", size=7.5, leading=9)
+    s_regs  = _s("irg", size=7,   leading=9, color=DARK)
+    s_ct    = _s("ict", size=7.5, leading=10, align=TA_RIGHT)
+    s_idln  = _s("iid", "Helvetica-Bold", 8, 11, align=TA_CENTER)
+    s_wh_t  = _s("wt",  "Helvetica-Bold", 17, 20, color=WHITE)
+    s_wlbl  = _s("wl",  size=8,  leading=11, color=WHITE)
+    s_wval  = _s("wv",  "Helvetica-Bold", 10, 13, color=WHITE)
+    s_sec_h = _s("ish", "Helvetica-Bold", 10, 13, color=RED)
+    s_mut   = _s("mut", size=7.5, leading=10, color=MUTED)
+    s_co    = _s("co",  "Helvetica-Bold", 11, 13)
+    s_kv    = _s("kv",  size=8.5, leading=12)
+    s_kvb   = _s("kvb", "Helvetica-Bold", 8.5, 12)
 
     story = []
 
-    # ── Red invoice header ────────────────────────────────────────────────────
-    hdr = Table(
-        [
-            [P("<b>TAX &#8211; INVOICE</b>", s_wh_t)],
-            [P(
-                f"<b>Invoice No: {invoice_no} (FY{fy})</b>"
-                f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-                f"<b>Date: {invoice_date.strftime('%d.%m.%Y')}</b>",
-                s_wh_s,
-            )],
-        ],
-        colWidths=[CW],
-    )
-    hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), RED),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+    # ── 1. Letterhead (compact, text-based) ────────────────────────────────────
+    name_block = [P(FIRM_NAME, s_name), P(FIRM_SUB, s_sub), P(FIRM_REGS, s_regs)]
+    contact_block = [P("harmilaprta@gmail.com", s_ct),
+                     P("+91-8929835991 / 9310931755 / 9205234407", s_ct)]
+    header = Table([[_invoice_logo(46), name_block, contact_block]],
+                   colWidths=[60, CW * 0.60 - 60, CW * 0.40])
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (1, 0), (1, 0), 6),
     ]))
-    story.append(hdr)
-    story.append(SP(6))
+    story.append(header)
+    story.append(SP(3))
 
-    # ── Billing address ───────────────────────────────────────────────────────
-    bill = Table(
-        [
-            [P("<b>Billing (Bill To) &amp; Delivery Address (Ship To):</b>", s_body), P("", s_body)],
-            [P(f"<b>Company Name &nbsp;&nbsp;&nbsp; {name}</b>", s_body), P("", s_body)],
-            [P(f"<b>Regd. / Billing Address &nbsp;&nbsp; {addr}</b>", s_body), P("", s_body)],
-            [P(f"<b>PAN / GST No:</b> {gst}", s_body),
-             P(f"<b>PLACE OF SUPPLY:</b> {place}", s_body)],
-        ],
-        colWidths=[CW * 0.6, CW * 0.4],
-    )
-    bill.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 1.2, BLACK),
-        ("INNERGRID",     (0, 0), (-1, -1), 0.8, DARK),
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-        ("SPAN",          (0, 0), (1, 0)),
-        ("SPAN",          (0, 1), (1, 1)),
-        ("SPAN",          (0, 2), (1, 2)),
+    # ── 2. Identifier strip (GSTIN / PAN / MSME) ───────────────────────────────
+    idstrip = Table([[P(FIRM_IDS, s_idln)]], colWidths=[CW])
+    idstrip.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (-1, -1), 1.0, RED),
+        ("LINEBELOW", (0, 0), (-1, -1), 1.0, RED),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
-    story.append(bill)
-    story.append(SP(6))
+    story.append(idstrip)
+    story.append(SP(4))
 
-    # ── Number of ISINs covered (company-level invoice spans all the issuer's ISINs) ─
+    # ── 3. TAX INVOICE banner ──────────────────────────────────────────────────
+    due_date = invoice_date + timedelta(days=30)
+    banner = Table([[
+        P("TAX INVOICE", s_wh_t),
+        [P("Invoice No.", s_wlbl), P(invoice_no, s_wval), P(f"(FY {fy})", s_wlbl)],
+        [P("Date", s_wlbl), P(invoice_date.strftime("%d.%m.%Y"), s_wval)],
+    ]], colWidths=[CW * 0.40, CW * 0.36, CW * 0.24])
+    banner.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), RED),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (0, 0), 12),
+        ("LEFTPADDING", (1, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(banner)
+    story.append(SP(5))
+
+    # ── 4. Bill To  +  Invoice Details ─────────────────────────────────────────
+    pan_gst = company.get("gst_number") or company.get("pan_number") or "N/A"
+    sub_block = Table([[
+        [P("PAN / GST No.", s_mut), P(pan_gst, s_kvb)],
+        [P("PLACE OF SUPPLY", s_mut), P(place, s_kvb)],
+    ]], colWidths=[(CW * 0.52 - 16) / 2] * 2)
+    sub_block.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBEFORE", (1, 0), (1, 0), 0.5, HexColor("#E0C0C0")),
+    ]))
+    bill_left = [
+        P("BILL TO &amp; SHIP TO", s_sec_h), SP(4),
+        P("Company Name", s_mut), P(name, s_co), SP(3),
+        P("Registered / Billing Address", s_mut), P(addr, s_kv), SP(5),
+        sub_block,
+    ]
+
+    def _kv(label, value):
+        return [P(label, s_kvb), P(":", s_kv), P(value, s_kv)]
+    details = Table([
+        _kv("Invoice No.", f"{invoice_no} (FY{fy})"),
+        _kv("Invoice Date", invoice_date.strftime("%d.%m.%Y")),
+        _kv("Due Date (Within 30 Days)", due_date.strftime("%d.%m.%Y")),
+        _kv("Place of Supply", place),
+    ], colWidths=[CW * 0.48 * 0.42, 10, CW * 0.48 * 0.46])
+    details.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    bill_right = [P("INVOICE DETAILS", s_sec_h), SP(4), details]
+
+    billrow = Table([[bill_left, bill_right]], colWidths=[CW * 0.52, CW * 0.48])
+    billrow.setStyle(TableStyle([
+        ("BOX", (0, 0), (0, 0), 1.0, RED),
+        ("BOX", (1, 0), (1, 0), 1.0, RED),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(billrow)
+    story.append(SP(4))
+
+    # No. of Active ISINs
     isins = [i for i in (company.get("isins") or []) if i]
-    isin_count = company.get("isin_units") or len(isins)
-    if isin_count:
-        story.append(P(
-            f"<b>No. of Active ISINs:</b> {isin_count}",
-            _s("isn", size=9, leading=12),
-        ))
-        story.append(SP(6))
+    isin_count = company.get("isin_units") or len(isins) or 1
+    story.append(P(f"<b>No. of Active ISINs:</b> &nbsp;{isin_count}", _s("isn", "Helvetica-Bold", 9, 12)))
+    story.append(SP(4))
 
-    # ── Service items — Section A (Taxable) and Section B (Non-Taxable) ────────
+    # ── 5. Services table (single, with Taxability column) ─────────────────────
     enabled = [it for it in items if it.get("enabled", True)]
 
     def _desc(it: dict) -> str:
         return (it.get("description") or "").replace("{fy}", fy).replace("{prev_fy}", p_fy).replace("{prev2_fy}", p2_fy)
 
-    taxable_items = [it for it in enabled if not it.get("non_taxable", False)]
-    nontax_items  = [it for it in enabled if it.get("non_taxable", False)]
+    def m2(v: float) -> str:
+        return f"{v:,.2f}"
 
-    taxable_total     = sum(float(it.get("amount") or 0) for it in taxable_items)
-    non_taxable_total = sum(float(it.get("amount") or 0) for it in nontax_items)
-
+    taxable_total     = sum(float(it.get("amount") or 0) for it in enabled if not it.get("non_taxable"))
+    non_taxable_total = sum(float(it.get("amount") or 0) for it in enabled if it.get("non_taxable"))
     if gst_type == "IGST":
         cgst = sgst = utgst = 0
         igst = round(taxable_total * igst_rate / 100)
@@ -718,75 +815,46 @@ def generate_invoice_pdf(
         sgst  = round(taxable_total * sgst_rate / 100)
         igst = utgst = 0
     gst_amt = cgst + sgst + igst + utgst
-    total_a = taxable_total + gst_amt        # A: taxable + GST
-    total_b = non_taxable_total              # B: actual expenses
+    total_a = taxable_total + gst_amt
+    total_b = non_taxable_total
     grand   = total_a + total_b
 
-    s_lbl   = _s("lbl",  "Helvetica",      10, 13, align=TA_RIGHT)
-    s_lbl_b = _s("lblb", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
-    s_amt   = _s("amt",  "Helvetica",      10, 13, align=TA_RIGHT)
-    s_amt_b = _s("amtb", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
+    s_th   = _s("th",  "Helvetica-Bold", 8.5, 11, color=WHITE, align=TA_CENTER)
+    s_td   = _s("td",  size=8.5, leading=11)
+    s_td_c = _s("tdc", size=8.5, leading=11, align=TA_CENTER)
+    s_td_r = _s("tdr", size=8.5, leading=11, align=TA_RIGHT)
+    s_td_red = _s("tdrd", "Helvetica-Bold", 8.5, 11, color=RED)
 
-    def money(v: float) -> str:
-        return f"{int(round(v)):,}" if v else "0"
-
-    rows: list = []
-    style_ops: list = []
-    spans: list = []
-
-    def add_header(desc_label: str, sac_label: str) -> None:
-        r = len(rows)
-        rows.append([P("S. No.", s_cb), P(desc_label, s_cb), P(sac_label, s_cb), P("Amount (Rs.)", s_cb)])
-        style_ops.append(("BACKGROUND", (0, r), (-1, r), GRAY_MID))
-        style_ops.append(("FONT", (0, r), (-1, r), "Helvetica-Bold", 10))
-
-    def add_item(idx: int, it: dict) -> None:
+    rows = [[P("S. No.", s_th), P("Description of Services", s_th),
+             P("SAC Code", s_th), P("Taxability", s_th), P("Amount (₹)", s_th)]]
+    for i, it in enumerate(enabled, 1):
+        is_nt = it.get("non_taxable", False)
         rows.append([
-            P(str(idx), s_c),
-            P(_desc(it), s_red if it.get("is_red", False) else s_body),
-            P(str(it.get("sac_code") or ""), s_c),
-            P(money(float(it.get("amount") or 0)), s_r),
+            P(str(i), s_td_c),
+            P(_desc(it), s_td_red if it.get("is_red") else s_td),
+            P("—" if is_nt else str(it.get("sac_code") or ""), s_td_c),
+            P("Non-Taxable<br/>(On Actuals)" if is_nt else "Taxable", s_td_c),
+            P(m2(float(it.get("amount") or 0)), s_td_r),
         ])
-
-    def add_label(label: str, val: float, bold: bool = False, shade: bool = False) -> None:
-        r = len(rows)
-        rows.append([P(label, s_lbl_b if bold else s_lbl), P("", s_body), P("", s_body),
-                     P(money(val), s_amt_b if bold else s_amt)])
-        spans.append(("SPAN", (0, r), (2, r)))   # right-aligned label spans S.No+Description+SAC
-        if shade:
-            style_ops.append(("BACKGROUND", (0, r), (-1, r), GRAY_MID))
-
-    # Section A — Taxable
-    add_header("Description of Services — Taxable", "SAC Code")
-    for i, it in enumerate(taxable_items, 1):
-        add_item(i, it)
-    add_label("Total Taxable Value (GST charged)", taxable_total, bold=True, shade=True)
-    add_label(f"CGST ({cgst_rate:.0f}%)", cgst)
-    add_label(f"SGST ({sgst_rate:.0f}%)", sgst)
-    add_label(f"IGST ({igst_rate:.0f}%)", igst)
-    add_label(f"UTGST ({igst_rate:.0f}%)", utgst)
-    add_label("Total Amount to be Paid (In Figures) — A", total_a, bold=True, shade=True)
-
-    # Section B — Non-Taxable
-    add_header("Description of Services — Non-Taxable", "")
-    for i, it in enumerate(nontax_items, 1):
-        add_item(i, it)
-    add_label("Non-Taxable Value (Actual Expenses / Out-of-Pocket) — B", total_b, bold=True, shade=True)
-
-    # Grand total (A + B)
-    add_label("Total Amount to be Paid (In Figures) (A + B)", grand, bold=True, shade=True)
-
-    svc = Table(rows, colWidths=[CW * 0.07, CW * 0.59, CW * 0.16, CW * 0.18])
+    svc = Table(rows, colWidths=[CW * 0.07, CW * 0.40, CW * 0.13, CW * 0.20, CW * 0.20], repeatRows=1)
     svc.setStyle(_ts(
-        ("ALIGN", (3, 0), (3, -1), "RIGHT"),
-        ("GRID",  (0, 0), (-1, -1), 1.0, BLACK),
-        *style_ops,
-        *spans,
+        ("BACKGROUND", (0, 0), (-1, 0), RED),
+        ("GRID", (0, 0), (-1, -1), 0.8, BLACK),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 1), (-1, -1), 3), ("BOTTOMPADDING", (0, 1), (-1, -1), 3),
     ))
     story.append(svc)
-    story.append(SP(6))
+    story.append(SP(2))
 
-    # ── Important notes (exact verbatim, bulleted) ───────────────────────────
+    # legend
+    story.append(P(
+        "<font color='#C00000'>●</font> Taxable&nbsp;&nbsp;&nbsp;&nbsp;"
+        "<font color='#2E7D32'>●</font> Non-Taxable (Actual Expenses)",
+        _s("lg", size=7.5, leading=10),
+    ))
+    story.append(SP(8))
+
+    # ── 6. Important Notes (left)  +  Invoice Summary (right) ──────────────────
     notes = [
         "GST returns are filed by us on a quarterly basis. Accordingly, no corrections, amendments, or modifications shall be possible once the relevant GST return has been filed.",
         "This invoice is issued subject to the Byelaws, Business Rules, and operational guidelines of Harmilap Share Transfer Agents and is subject to the exclusive jurisdiction of the Courts at Delhi.",
@@ -795,75 +863,111 @@ def generate_invoice_pdf(
         "Any excess payment made to the Depository or any Stamp Duty paid to the Government on behalf of the company shall be recoverable from the company.",
         "The PAN number is mentioned on the invoice only in cases where the company does not have a valid GSTIN.",
         "Kindly verify the PAN and GST details mentioned in the invoice. In case of any discrepancy, please inform us immediately so that necessary corrections can be made before the filing of GST returns. GST shall be considered in our GST return only upon receipt of payment from the Issuer Company.",
-        "In the event that any dues or outstanding payments remain unpaid for more than 60 days, we reserve the right to suspend all services, deactivate the ISIN, and report the matter to the concerned Depository until all outstanding dues are fully cleared.",
     ]
-
-    s_bul = _s("bul", size=8, leading=11, align=TA_JUSTIFY, leftIndent=12, bulletIndent=2)
-
-    story.append(P("<b><u>Important Notes</u></b>", s_smb))
-    story.append(SP(2))
-    for note in notes:
-        story.append(Paragraph(note, s_bul, bulletText="•"))
-        story.append(SP(2))
-    story.append(SP(8))
-
-    # ── Bank / UPI ────────────────────────────────────────────────────────────
-    story.append(P(
-        "<b>You can transfer Funds by IMPS / NEFT in following Bank Accounts</b>",
-        _s("bk", "Helvetica-Bold", 9, 12, align=TA_CENTER),
-    ))
-    story.append(SP(6))
-
-    qr_w = 1.3 * inch
-    qr_h = 1.3 * inch
-    qr_row = Table(
-        [[Image(A_QR, width=qr_w, height=qr_h), P("", s_body), P("", s_body)]],
-        colWidths=[CW * 0.25, CW * 0.5, CW * 0.25],
+    callout_note = (
+        "In the event that any dues or outstanding payments remain unpaid for more than 60 days, "
+        "we reserve the right to suspend all services, deactivate the ISIN, and report the matter "
+        "to the concerned Depository until all outstanding dues are fully cleared."
     )
-    qr_row.setStyle(TableStyle([
-        ("ALIGN",  (0, 0), (0, 0), "CENTER"),
+
+    s_note = _s("nt", size=6.7, leading=7.3, align=TA_JUSTIFY, leftIndent=10, bulletIndent=0)
+    notes_cell = [P("IMPORTANT NOTES", s_sec_h), SP(3)]
+    for i, note in enumerate(notes, 1):
+        notes_cell.append(Paragraph(note, s_note, bulletText=f"{i}."))
+        notes_cell.append(SP(1))
+
+    # Summary box
+    s_sh   = _s("sh",  "Helvetica-Bold", 9, 12, color=WHITE)
+    s_shr  = _s("shr", "Helvetica-Bold", 9, 12, color=WHITE, align=TA_RIGHT)
+    s_sl   = _s("sl",  size=8.5, leading=11)
+    s_slb  = _s("slb", "Helvetica-Bold", 8.5, 11)
+    s_sr   = _s("sr2", size=8.5, leading=11, align=TA_RIGHT)
+    s_srb  = _s("srb", "Helvetica-Bold", 8.5, 11, align=TA_RIGHT)
+    s_gl   = _s("gl",  "Helvetica-Bold", 9.5, 13, color=WHITE)
+    s_gr   = _s("gr",  "Helvetica-Bold", 12, 14, color=WHITE, align=TA_RIGHT)
+
+    sum_inner = CW * 0.46
+    sc = [sum_inner * 0.62, sum_inner * 0.38]
+    sum_rows = [
+        [P("INVOICE SUMMARY", s_sh), P("Amount (₹)", s_shr)],
+        [P("Total Taxable Value (A)", s_slb), P(m2(taxable_total), s_srb)],
+        [P(f"CGST @ {cgst_rate:.0f}%", s_sl), P(m2(cgst), s_sr)],
+        [P(f"SGST @ {sgst_rate:.0f}%", s_sl), P(m2(sgst), s_sr)],
+        [P(f"IGST @ {igst_rate:.0f}%", s_sl), P(m2(igst), s_sr)],
+        [P(f"UTGST @ {igst_rate:.0f}%", s_sl), P(m2(utgst), s_sr)],
+        [P("Total Amount to be Paid (In Figures) - A", s_slb), P(m2(total_a), s_srb)],
+        [P("Non-Taxable Value (B)<br/><font size=7>(Actual Expenses / Out-of-Pocket)</font>", s_sl), P(m2(total_b), s_sr)],
+        [P("Total Amount to be Paid (In Figures) (A + B)", s_gl), P(f"₹ {m2(grand)}", s_gr)],
+    ]
+    summary = Table(sum_rows, colWidths=sc)
+    summary.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), RED),
+        ("BACKGROUND", (0, 1), (-1, 1), LIGHT),
+        ("BACKGROUND", (0, 6), (-1, 6), LIGHT),
+        ("BACKGROUND", (0, 7), (-1, 7), HexColor("#EAF5EA")),
+        ("BACKGROUND", (0, 8), (-1, 8), RED),
+        ("GRID", (0, 0), (-1, -1), 0.6, HexColor("#D8B8B8")),
+        ("BOX", (0, 0), (-1, -1), 1.0, RED),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
     ]))
-    story.append(qr_row)
-    story.append(SP(6))
 
-    # Closing block
-    story.append(P("Thanking You", s_body))
-    story.append(SP(4))
-    story.append(P("REPORTING DESK", s_blue))
-    story.append(P("HARMILAP SHARE TRANSFER AGENTS", s_red))
-    story.append(SP(6))
-    story.append(P(
-        "This is a system generated report, no signature is required.",
-        _s("sg3", size=9, leading=12, color=DARK),
-    ))
-    story.append(SP(4))
-    story.append(P(
-        f"Place: New Delhi     Date: {invoice_date.strftime('%d.%m.%Y')}",
-        _s("pd3", size=9, leading=12, color=DARK),
-    ))
-    story.append(SP(8))
+    ns = Table([[notes_cell, summary]], colWidths=[CW * 0.50, CW * 0.50])
+    ns.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 12),
+        ("LEFTPADDING", (1, 0), (1, 0), 0), ("RIGHTPADDING", (1, 0), (1, 0), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ns)
+    story.append(SP(5))
 
-    # ── Dark footer bar ───────────────────────────────────────────────────────
-    ftr = Table(
-        [[P("Thanking You for Choosing us as your Registrar and Share Transfer Agents", s_wh)]],
-        colWidths=[CW],
-    )
+    # ── 7. Red warning callout ─────────────────────────────────────────────────
+    callout = Table([[P("!", _s("ex", "Helvetica-Bold", 16, 18, color=WHITE, align=TA_CENTER)),
+                      P(callout_note, _s("co2", size=8, leading=11))]],
+                    colWidths=[26, CW - 26])
+    callout.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), RED),
+        ("BACKGROUND", (1, 0), (1, 0), LIGHT),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (1, 0), (1, 0), 8), ("RIGHTPADDING", (1, 0), (1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(callout)
+    story.append(SP(3))
+
+    # ── 8. Payment (UPI QR) + signature note ───────────────────────────────────
+    qr_block = [P("Scan to pay by UPI / IMPS / NEFT", _s("qh", "Helvetica-Bold", 8, 11, align=TA_CENTER)),
+                SP(3), Image(A_QR, width=0.85 * inch, height=0.85 * inch)]
+    sig_block = [P("This is a system generated report, no signature is required.",
+                   _s("sg", size=8.5, leading=12, color=DARK)),
+                 SP(6),
+                 P(f"<b>Place:</b> New Delhi", s_kv),
+                 P(f"<b>Date:</b> {invoice_date.strftime('%d.%m.%Y')}", s_kv)]
+    pay = Table([[qr_block, sig_block]], colWidths=[CW * 0.38, CW * 0.62])
+    pay.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, 0), "CENTER"),
+        ("BOX", (0, 0), (-1, -1), 0.8, HexColor("#D8B8B8")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LINEAFTER", (0, 0), (0, 0), 0.5, HexColor("#D8B8B8")),
+    ]))
+    story.append(pay)
+    story.append(SP(3))
+
+    # ── 9. Thank-you bar ───────────────────────────────────────────────────────
+    ftr = Table([[P("Thanking You for Choosing us as your Registrar and Share Transfer Agents",
+                    _s("ty", "Helvetica-Bold", 8.5, 11, color=WHITE, align=TA_CENTER))]],
+                colWidths=[CW])
     ftr.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), DARK),
-        ("TOPPADDING",    (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND", (0, 0), (-1, -1), RED),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(ftr)
-    story.append(SP(4))
 
-    story.append(P(
-        "If there is any query, please feel free to Contact us at "
-        "Ph: 9205234407 / 8929835991 or email us at harmilaprta@gmail.com",
-        _s("ct", size=9, leading=12, align=TA_CENTER),
-    ))
-
-    return _build_full(story, A_INVOICE_HDR, _INH)
+    return _build_invoice(story)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

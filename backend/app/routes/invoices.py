@@ -217,11 +217,11 @@ def _party_code(party: dict) -> str:
 
 
 async def _next_invoice_no(party: dict, fy: str, db: AsyncSession) -> str:
-    """Format: <financial year>/<rta code>/<serial>, e.g. 2026-27/4369/1."""
+    """Format: RTAN<rta code>/<serial>, e.g. RTAN4369/1 (serial runs per financial year)."""
     seq = ((await db.execute(
         select(sql_func.count(Invoice.id)).where(Invoice.fiscal_year == fy)
     )).scalar() or 0) + 1
-    return f"{fy}/{_party_code(party)}/{seq}"
+    return f"RTAN{_party_code(party)}/{seq}"
 
 
 def _build_out(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> InvoiceOut:
@@ -294,7 +294,7 @@ def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
         "gst_type": out.gst_type, "igst_rate": out.igst_rate,
         "cgst_rate": out.cgst_rate, "sgst_rate": out.sgst_rate,
     }
-    inv_no = out.invoice_no or f"{out.fiscal_year}/{_party_code(party)}/1"
+    inv_no = out.invoice_no or f"RTAN{_party_code(party)}/1"
     return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, _cfg_invoice_date(cfg))
 
 
