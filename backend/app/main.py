@@ -36,6 +36,18 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_generated_at TIMESTAMPTZ"
         ))
 
+        # invoices: drop the financial-year prefix from existing invoice numbers
+        # (old format "2026-27/<code>/<seq>" → "<code>/<seq>")
+        await conn.execute(text(
+            r"UPDATE invoices SET invoice_no = regexp_replace(invoice_no, '^[0-9]{4}-[0-9]{2}/', '') "
+            r"WHERE invoice_no ~ '^[0-9]{4}-[0-9]{2}/'"
+        ))
+        # collapse any duplicated 'RTAN' prefix from the earlier prepend bug
+        await conn.execute(text(
+            "UPDATE invoices SET invoice_no = regexp_replace(invoice_no, '^(RTAN)+', 'RTAN') "
+            "WHERE invoice_no LIKE 'RTANRTAN%'"
+        ))
+
         # invoice_config: configurable invoice date + bank accounts
         await conn.execute(text(
             "ALTER TABLE invoice_config ADD COLUMN IF NOT EXISTS invoice_date DATE"

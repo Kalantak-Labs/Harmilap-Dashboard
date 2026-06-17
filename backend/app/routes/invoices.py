@@ -225,16 +225,17 @@ def _seed_particulars(cfg: InvoiceConfig) -> list[dict]:
 
 
 def _party_code(party: dict) -> str:
-    """RTA code for the invoice number — NSDL preferred, else CDSL."""
-    return party.get("nsdl_rta_code") or party.get("cdsl_rta_code") or ""
+    """RTA code for the invoice number, used verbatim — NSDL preferred, else CDSL."""
+    return (party.get("nsdl_rta_code") or party.get("cdsl_rta_code") or "").strip()
 
 
 async def _next_invoice_no(party: dict, fy: str, db: AsyncSession) -> str:
-    """Format: RTAN<rta code>/<serial>, e.g. RTAN4369/1 (serial runs per financial year)."""
+    """Format: <rta code>/<serial>, e.g. RTAN1553/5 (serial runs per financial year).
+    The RTA code is used exactly as stored — nothing is prefixed or stripped."""
     seq = ((await db.execute(
         select(sql_func.count(Invoice.id)).where(Invoice.fiscal_year == fy)
     )).scalar() or 0) + 1
-    return f"RTAN{_party_code(party)}/{seq}"
+    return f"{_party_code(party)}/{seq}"
 
 
 def _build_out(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> InvoiceOut:
@@ -308,7 +309,7 @@ def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
         "cgst_rate": out.cgst_rate, "sgst_rate": out.sgst_rate,
         "bank_accounts": getattr(cfg, "bank_accounts", None) or [],
     }
-    inv_no = out.invoice_no or f"RTAN{_party_code(party)}/1"
+    inv_no = out.invoice_no or f"{_party_code(party)}/1"
     return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, _cfg_invoice_date(cfg))
 
 
