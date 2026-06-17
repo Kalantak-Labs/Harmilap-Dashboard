@@ -184,6 +184,46 @@ GST_STATE = {
 }
 
 
+_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+         "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
+         "Eighteen", "Nineteen"]
+_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _two_words(n: int) -> str:
+    if n < 20:
+        return _ONES[n]
+    return _TENS[n // 10] + (" " + _ONES[n % 10] if n % 10 else "")
+
+
+def _three_words(n: int) -> str:
+    h, r = n // 100, n % 100
+    s = (_ONES[h] + " Hundred") if h else ""
+    if r:
+        s += (" " if s else "") + _two_words(r)
+    return s
+
+
+def _amount_in_words(amount: float) -> str:
+    """Indian-system amount in words, e.g. 'Rupees Four Thousand One Hundred Thirty Only'."""
+    rupees = int(round(amount))
+    if rupees == 0:
+        return "Rupees Zero Only"
+    parts: list[str] = []
+    crore = rupees // 10_000_000; rupees %= 10_000_000
+    lakh = rupees // 100_000; rupees %= 100_000
+    thousand = rupees // 1_000; rupees %= 1_000
+    if crore:
+        parts.append(_two_words(crore) + " Crore")
+    if lakh:
+        parts.append(_two_words(lakh) + " Lakh")
+    if thousand:
+        parts.append(_two_words(thousand) + " Thousand")
+    if rupees:
+        parts.append(_three_words(rupees))
+    return "Rupees " + " ".join(parts) + " Only"
+
+
 def _place_of_supply(company: dict) -> str:
     """From GST state code (first 2 digits) → 'State / Code'; else city + pin code."""
     gst = (company.get("gst_number") or "").strip()
@@ -958,6 +998,18 @@ def generate_invoice_pdf(
         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(ns)
+    story.append(SP(4))
+
+    # Total amount in words
+    words = Table([[P(f"<b>Total Amount (in words):</b> {_amount_in_words(grand)}",
+                      _s("aiw", size=8.5, leading=12))]], colWidths=[CW])
+    words.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+        ("BOX", (0, 0), (-1, -1), 0.8, RED),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(words)
     story.append(SP(5))
 
     # ── 7. Red warning callout ─────────────────────────────────────────────────
