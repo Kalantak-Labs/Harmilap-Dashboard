@@ -348,19 +348,12 @@ def _build_invoice(story: list) -> bytes:
     wm  = _invoice_watermark()
     buf = io.BytesIO()
     top    = MARGIN + 4
-    bottom = _BOTTOM + _EXTRA_BOTTOM
+    bottom = _BOTTOM
 
     def _draw(canvas, _doc):
         canvas.saveState()
-        canvas.drawImage(A_FOOTER, MARGIN, MARGIN + _EXTRA_BOTTOM,
+        canvas.drawImage(A_FOOTER, MARGIN, MARGIN,
                          width=CW, height=_FH, preserveAspectRatio=False, mask="auto")
-        canvas.setFont("Helvetica", 7.5)
-        canvas.setFillColor(RED)
-        canvas.drawCentredString(
-            PAGE_W / 2, MARGIN + 2,
-            "Email Id: harmilaprta@gmail.com  |  "
-            "Contact No: +91-8929835991 / 9310931755 / 9205234407",
-        )
         if wm:
             wm_bytes, wm_w_px, wm_h_px = wm
             reader = ImageReader(io.BytesIO(wm_bytes))
@@ -947,10 +940,10 @@ def generate_invoice_pdf(
         "to the concerned Depository until all outstanding dues are fully cleared."
     )
 
-    s_note = _s("nt", size=6.7, leading=7.3, align=TA_JUSTIFY, leftIndent=10, bulletIndent=0)
+    s_note = _s("nt", size=6.7, leading=7.3, align=TA_JUSTIFY)
     notes_cell = [P("IMPORTANT NOTES", s_sec_h), SP(3)]
     for i, note in enumerate(notes, 1):
-        notes_cell.append(Paragraph(note, s_note, bulletText=f"{i}."))
+        notes_cell.append(P(f"{i}.&nbsp;{note}", s_note))
         notes_cell.append(SP(1))
 
     # Summary box
@@ -972,9 +965,9 @@ def generate_invoice_pdf(
         [P(f"SGST @ {sgst_rate:.0f}%", s_sl), P(m2(sgst), s_sr)],
         [P(f"IGST @ {igst_rate:.0f}%", s_sl), P(m2(igst), s_sr)],
         [P(f"UTGST @ {igst_rate:.0f}%", s_sl), P(m2(utgst), s_sr)],
-        [P("Total Amount to be Paid (In Figures) - A", s_slb), P(m2(total_a), s_srb)],
+        [P("Total Amount to be Paid - A", s_slb), P(m2(total_a), s_srb)],
         [P("Non-Taxable Value (B)<br/><font size=7>(Actual Expenses / Out-of-Pocket)</font>", s_sl), P(m2(total_b), s_sr)],
-        [P("Total Amount to be Paid (In Figures) (A + B)", s_gl), P(f"Rs. {m2(grand)}", s_gr)],
+        [P("Total Amount to be Paid (A + B)", s_gl), P(f"Rs. {m2(grand)}", s_gr)],
     ]
     summary = Table(sum_rows, colWidths=sc)
     summary.setStyle(TableStyle([
