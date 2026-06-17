@@ -53,6 +53,7 @@ A_ID_STRIP    = os.path.join(_ASSETS, "id_strip.png")         # SEBI/NSDL/CDSL s
 A_FOOTER      = os.path.join(_ASSETS, "footer_strip.png")     # Regd. address strip
 A_STAMP       = os.path.join(_ASSETS, "stamp.png")            # round red seal (72×53 px)
 A_QR          = os.path.join(_ASSETS, "qr_code.png")          # Paytm UPI QR
+A_LOGO        = os.path.join(_ASSETS, "logo.png")             # standalone Harmilap crown logo
 
 # Heights at full content width (scale proportionally from source pixel dims)
 _RH  = CW * 376 / 2492   # report/benpos header ≈ 79 pts
@@ -268,24 +269,43 @@ def _build_full(story: list, hdr_path: str, hdr_h: float) -> bytes:
 
 
 def _invoice_logo(height: float = 46):
-    """Crown logo cropped (full opacity) from the left of the letterhead asset."""
+    """Standalone crown logo (logo.png) if present, else cropped from the letterhead."""
     try:
         from PIL import Image as PILImage
-        img = PILImage.open(A_INVOICE_HDR).convert("RGBA")
-        w, h = img.size
-        crop = img.crop((0, 0, int(w * 0.20), h))
+        if os.path.exists(A_LOGO):
+            img = PILImage.open(A_LOGO).convert("RGBA")
+        else:
+            full = PILImage.open(A_INVOICE_HDR).convert("RGBA")
+            w, h = full.size
+            img = full.crop((0, 0, int(w * 0.20), h))
         out = io.BytesIO()
-        crop.save(out, "PNG")
+        img.save(out, "PNG")
         out.seek(0)
-        cw_px, ch_px = crop.size
-        return Image(out, width=height * (cw_px / ch_px), height=height)
+        w_px, h_px = img.size
+        return Image(out, width=height * (w_px / h_px), height=height)
     except Exception:
         return Spacer(1, height)
 
 
+def _invoice_watermark() -> Optional[tuple]:
+    """Faint centre watermark from logo.png if present, else from the letterhead crop."""
+    if os.path.exists(A_LOGO):
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(A_LOGO).convert("RGBA")
+            r, g, b, a = img.split()
+            a = a.point(lambda v: int(v * 0.10))
+            out = io.BytesIO()
+            PILImage.merge("RGBA", (r, g, b, a)).save(out, "PNG")
+            return (out.getvalue(), img.size[0], img.size[1])
+        except Exception:
+            pass
+    return _watermark_data(A_INVOICE_HDR)
+
+
 def _build_invoice(story: list) -> bytes:
     """Invoice page: text header is part of the flow; only footer + watermark are painted."""
-    wm  = _watermark_data(A_INVOICE_HDR)
+    wm  = _invoice_watermark()
     buf = io.BytesIO()
     top    = MARGIN + 4
     bottom = _BOTTOM + _EXTRA_BOTTOM
@@ -842,7 +862,7 @@ def generate_invoice_pdf(
     nontax_items  = [it for it in enabled if it.get("non_taxable")]
 
     rows = [[P("S. No.", s_th), P("Description of Services", s_th),
-             P("SAC Code", s_th), P("Amount (₹)", s_th)]]
+             P("SAC Code", s_th), P("Amount (Rs.)", s_th)]]
     style_ops = [
         ("BACKGROUND", (0, 0), (-1, 0), RED),
         ("GRID", (0, 0), (-1, -1), 0.8, BLACK),
@@ -907,7 +927,7 @@ def generate_invoice_pdf(
     sum_inner = CW * 0.46
     sc = [sum_inner * 0.62, sum_inner * 0.38]
     sum_rows = [
-        [P("INVOICE SUMMARY", s_sh), P("Amount (₹)", s_shr)],
+        [P("INVOICE SUMMARY", s_sh), P("Amount (Rs.)", s_shr)],
         [P("Total Taxable Value (A)", s_slb), P(m2(taxable_total), s_srb)],
         [P(f"CGST @ {cgst_rate:.0f}%", s_sl), P(m2(cgst), s_sr)],
         [P(f"SGST @ {sgst_rate:.0f}%", s_sl), P(m2(sgst), s_sr)],
@@ -915,7 +935,7 @@ def generate_invoice_pdf(
         [P(f"UTGST @ {igst_rate:.0f}%", s_sl), P(m2(utgst), s_sr)],
         [P("Total Amount to be Paid (In Figures) - A", s_slb), P(m2(total_a), s_srb)],
         [P("Non-Taxable Value (B)<br/><font size=7>(Actual Expenses / Out-of-Pocket)</font>", s_sl), P(m2(total_b), s_sr)],
-        [P("Total Amount to be Paid (In Figures) (A + B)", s_gl), P(f"₹ {m2(grand)}", s_gr)],
+        [P("Total Amount to be Paid (In Figures) (A + B)", s_gl), P(f"Rs. {m2(grand)}", s_gr)],
     ]
     summary = Table(sum_rows, colWidths=sc)
     summary.setStyle(TableStyle([
