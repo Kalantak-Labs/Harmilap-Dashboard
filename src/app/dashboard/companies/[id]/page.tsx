@@ -241,6 +241,13 @@ export default function CompanyDetailPage() {
           <Field label="City" value={editing ? inp("reg_city") : company.reg_city} />
           <Field label="State" value={editing ? inp("state") : company.state} />
           <Field label="Pin Code" value={editing ? inp("reg_pin_code") : company.reg_pin_code} />
+          <Field label="Complete Address" value={(() => {
+            const s = editing ? form : company;
+            const parts = [s.reg_address_line1, s.reg_address_line2, s.reg_address_line3, s.reg_address_line4, s.reg_city, s.state, s.reg_pin_code]
+              .map((v) => (v == null ? "" : String(v).trim()))
+              .filter(Boolean);
+            return parts.length ? parts.join(", ") : null;
+          })()} />
         </div>
 
         {/* Section: Billing Address */}
