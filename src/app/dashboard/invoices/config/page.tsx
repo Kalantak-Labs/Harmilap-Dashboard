@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Trash2, Check } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import type { InvoiceConfig, InvoiceLineItem } from "@/lib/types";
+import type { InvoiceConfig, InvoiceLineItem, BankAccount } from "@/lib/types";
 
 export default function InvoiceConfigPage() {
   const { push } = useToast();
@@ -16,10 +16,29 @@ export default function InvoiceConfigPage() {
 
   useEffect(() => {
     api.invoices.getConfig()
-      .then(setConfig)
+      .then((c) => setConfig({ ...c, bank_accounts: c.bank_accounts ?? [] }))
       .catch(() => push("error", "Failed to load config"))
       .finally(() => setLoading(false));
   }, []);
+
+  // ── Bank account helpers ──
+  const setBanks = (banks: BankAccount[]) =>
+    setConfig((c) => c ? { ...c, bank_accounts: banks } : c);
+  const addBank = () =>
+    setBanks([...(config!.bank_accounts ?? []), { title: "", details: [{ label: "", value: "" }] }]);
+  const removeBank = (bi: number) =>
+    setBanks(config!.bank_accounts.filter((_, i) => i !== bi));
+  const setBankTitle = (bi: number, title: string) =>
+    setBanks(config!.bank_accounts.map((b, i) => i === bi ? { ...b, title } : b));
+  const setBankDetail = (bi: number, di: number, patch: Partial<{ label: string; value: string }>) =>
+    setBanks(config!.bank_accounts.map((b, i) => i === bi
+      ? { ...b, details: b.details.map((d, j) => j === di ? { ...d, ...patch } : d) } : b));
+  const addBankDetail = (bi: number) =>
+    setBanks(config!.bank_accounts.map((b, i) => i === bi
+      ? { ...b, details: [...b.details, { label: "", value: "" }] } : b));
+  const removeBankDetail = (bi: number, di: number) =>
+    setBanks(config!.bank_accounts.map((b, i) => i === bi
+      ? { ...b, details: b.details.filter((_, j) => j !== di) } : b));
 
   const setItems = (items: InvoiceLineItem[]) =>
     setConfig((c) => c ? { ...c, line_items: items } : c);
@@ -205,6 +224,49 @@ export default function InvoiceConfigPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Bank accounts */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Bank Account Details</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>Shown on the invoice (max 2)</span>
+        </div>
+        <div style={{ padding: "12px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {(config.bank_accounts ?? []).map((bank, bi) => (
+            <div key={bi} style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 12 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <input
+                  className="input input-sm"
+                  placeholder="Bank title (e.g. ICICI Bank)"
+                  value={bank.title}
+                  style={{ fontWeight: 600 }}
+                  onChange={(e) => setBankTitle(bi, e.target.value)}
+                />
+                <button className="btn btn-ghost btn-sm btn-icon" title="Remove bank" onClick={() => removeBank(bi)} style={{ color: "var(--danger)" }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              {bank.details.map((d, di) => (
+                <div key={di} style={{ display: "grid", gridTemplateColumns: "130px 1fr auto", gap: 6, marginBottom: 6 }}>
+                  <input className="input input-sm" placeholder="Field" value={d.label}
+                    onChange={(e) => setBankDetail(bi, di, { label: e.target.value })} />
+                  <input className="input input-sm" placeholder="Value" value={d.value}
+                    onChange={(e) => setBankDetail(bi, di, { value: e.target.value })} />
+                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => removeBankDetail(bi, di)} style={{ color: "var(--text-muted)" }}>
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+              <button className="btn btn-ghost btn-sm" onClick={() => addBankDetail(bi)}><Plus size={12} /> Add field</button>
+            </div>
+          ))}
+        </div>
+        {(config.bank_accounts ?? []).length < 2 && (
+          <div style={{ padding: "0 18px 14px" }}>
+            <button className="btn btn-ghost btn-sm" onClick={addBank}><Plus size={13} /> Add bank account</button>
+          </div>
+        )}
       </div>
 
       {/* Preview totals */}

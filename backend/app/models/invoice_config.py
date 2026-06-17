@@ -61,4 +61,6 @@ class InvoiceConfig(Base):
     cgst_rate = Column(Float, nullable=False, default=9.0)
     sgst_rate = Column(Float, nullable=False, default=9.0)
     invoice_date = Column(Date, nullable=True)  # configurable invoice date; falls back to today
+    # Up to 2 bank accounts: [{"title": str, "details": [{"label": str, "value": str}]}]
+    bank_accounts = Column(JSON, nullable=False, default=list)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -157,6 +157,16 @@ export interface InvoiceLineItem {
   enabled: boolean;
 }
 
+export interface BankDetail {
+  label: string;
+  value: string;
+}
+
+export interface BankAccount {
+  title: string;
+  details: BankDetail[];
+}
+
 export interface InvoiceConfig {
   line_items: InvoiceLineItem[];
   gst_type: "IGST" | "CGST_SGST";
@@ -164,6 +174,7 @@ export interface InvoiceConfig {
   cgst_rate: number;
   sgst_rate: number;
   invoice_date: string | null;
+  bank_accounts: BankAccount[];
 }
 
 // Company-level tax invoices (keyed by RTA code)

@@ -52,6 +52,16 @@ class LineItem(BaseModel):
     enabled: bool = True
 
 
+class BankDetail(BaseModel):
+    label: str = ""
+    value: str = ""
+
+
+class BankAccount(BaseModel):
+    title: str = ""
+    details: list[BankDetail] = []
+
+
 class InvoiceConfigBody(BaseModel):
     line_items: list[LineItem]
     gst_type: str = "IGST"
@@ -59,6 +69,7 @@ class InvoiceConfigBody(BaseModel):
     cgst_rate: float = 9.0
     sgst_rate: float = 9.0
     invoice_date: date | None = None
+    bank_accounts: list[BankAccount] = []
 
 
 @router.get("/config")
@@ -71,6 +82,7 @@ async def get_config(
         "line_items": cfg.line_items, "gst_type": cfg.gst_type,
         "igst_rate": cfg.igst_rate, "cgst_rate": cfg.cgst_rate, "sgst_rate": cfg.sgst_rate,
         "invoice_date": getattr(cfg, "invoice_date", None),
+        "bank_accounts": getattr(cfg, "bank_accounts", None) or [],
     }
 
 
@@ -87,6 +99,7 @@ async def update_config(
     cfg.cgst_rate = body.cgst_rate
     cfg.sgst_rate = body.sgst_rate
     cfg.invoice_date = body.invoice_date
+    cfg.bank_accounts = [b.model_dump() for b in body.bank_accounts][:2]
     await db.commit()
     return {"ok": True}
 
@@ -293,6 +306,7 @@ def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
         "line_items": line_items,
         "gst_type": out.gst_type, "igst_rate": out.igst_rate,
         "cgst_rate": out.cgst_rate, "sgst_rate": out.sgst_rate,
+        "bank_accounts": getattr(cfg, "bank_accounts", None) or [],
     }
     inv_no = out.invoice_no or f"RTAN{_party_code(party)}/1"
     return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, _cfg_invoice_date(cfg))

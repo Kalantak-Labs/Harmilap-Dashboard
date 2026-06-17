@@ -171,6 +171,27 @@ def _rta_prefix(company: dict) -> str:
     return "/".join(parts)
 
 
+GST_STATE = {
+    "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh",
+    "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh",
+    "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur",
+    "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal",
+    "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+    "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka",
+    "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry",
+    "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh",
+}
+
+
+def _place_of_supply(company: dict) -> str:
+    """From GST state code (first 2 digits) → 'State / Code'; else city + pin code."""
+    gst = (company.get("gst_number") or "").strip()
+    if len(gst) >= 2 and gst[:2] in GST_STATE:
+        return f"{GST_STATE[gst[:2]]} / {gst[:2]}"
+    parts = list(filter(None, [company.get("reg_city"), company.get("reg_pin_code")]))
+    return ", ".join(parts) if parts else "N/A"
+
+
 def _addr(company: dict, sep: str = ", ") -> str:
     """Return billing_address if set, else join reg_address fields."""
     ba = company.get("billing_address")
@@ -667,9 +688,8 @@ def generate_invoice_pdf(
 
     name  = (company.get("company_name") or "").upper()
     addr  = _addr(company)
-    gst   = company.get("gst_number") or company.get("pan_number") or "N/A"
-    supply_parts = list(filter(None, [company.get("reg_city"), company.get("reg_pin_code")]))
-    place = ",".join(supply_parts) if supply_parts else "N/A"
+    place = _place_of_supply(company)
+    bank_accounts = config.get("bank_accounts") or []
 
     # Theme + firm constants
     LIGHT  = HexColor("#FBE9E9")   # light red tint
@@ -691,9 +711,7 @@ def generate_invoice_pdf(
     s_regs  = _s("irg", size=7,   leading=9, color=DARK)
     s_ct    = _s("ict", size=7.5, leading=10, align=TA_RIGHT)
     s_idln  = _s("iid", "Helvetica-Bold", 8, 11, align=TA_CENTER)
-    s_wh_t  = _s("wt",  "Helvetica-Bold", 17, 20, color=WHITE)
-    s_wlbl  = _s("wl",  size=8,  leading=11, color=WHITE)
-    s_wval  = _s("wv",  "Helvetica-Bold", 10, 13, color=WHITE)
+    s_wh_t  = _s("wt",  "Helvetica-Bold", 18, 22, color=WHITE, align=TA_CENTER)
     s_sec_h = _s("ish", "Helvetica-Bold", 10, 13, color=RED)
     s_mut   = _s("mut", size=7.5, leading=10, color=MUTED)
     s_co    = _s("co",  "Helvetica-Bold", 11, 13)
@@ -703,8 +721,8 @@ def generate_invoice_pdf(
     story = []
 
     # ── 1. Letterhead (compact, text-based) ────────────────────────────────────
-    name_block = [P(FIRM_NAME, s_name), P(FIRM_SUB, s_sub), P(FIRM_REGS, s_regs)]
-    contact_block = [P("harmilaprta@gmail.com", s_ct),
+    name_block = [P(FIRM_NAME, s_name), P(FIRM_REGS, s_regs)]
+    contact_block = [P("Email: harmilaprta@gmail.com", s_ct),
                      P("+91-8929835991 / 9310931755 / 9205234407", s_ct)]
     header = Table([[_invoice_logo(46), name_block, contact_block]],
                    colWidths=[60, CW * 0.60 - 60, CW * 0.40])
@@ -727,19 +745,13 @@ def generate_invoice_pdf(
     story.append(idstrip)
     story.append(SP(4))
 
-    # ── 3. TAX INVOICE banner ──────────────────────────────────────────────────
+    # ── 3. TAX INVOICE banner (centered title only) ────────────────────────────
     due_date = invoice_date + timedelta(days=30)
-    banner = Table([[
-        P("TAX INVOICE", s_wh_t),
-        [P("Invoice No.", s_wlbl), P(invoice_no, s_wval), P(f"(FY {fy})", s_wlbl)],
-        [P("Date", s_wlbl), P(invoice_date.strftime("%d.%m.%Y"), s_wval)],
-    ]], colWidths=[CW * 0.40, CW * 0.36, CW * 0.24])
+    banner = Table([[P("TAX INVOICE", s_wh_t)]], colWidths=[CW])
     banner.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), RED),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (0, 0), 12),
-        ("LEFTPADDING", (1, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     story.append(banner)
     story.append(SP(5))
@@ -767,9 +779,9 @@ def generate_invoice_pdf(
     def _kv(label, value):
         return [P(label, s_kvb), P(":", s_kv), P(value, s_kv)]
     details = Table([
-        _kv("Invoice No.", f"{invoice_no} (FY{fy})"),
+        _kv("Invoice No.", invoice_no),
         _kv("Invoice Date", invoice_date.strftime("%d.%m.%Y")),
-        _kv("Due Date (Within 30 Days)", due_date.strftime("%d.%m.%Y")),
+        _kv("Due Date", due_date.strftime("%d.%m.%Y")),
         _kv("Place of Supply", place),
     ], colWidths=[CW * 0.48 * 0.42, 10, CW * 0.48 * 0.46])
     details.setStyle(TableStyle([
@@ -819,39 +831,45 @@ def generate_invoice_pdf(
     total_b = non_taxable_total
     grand   = total_a + total_b
 
-    s_th   = _s("th",  "Helvetica-Bold", 8.5, 11, color=WHITE, align=TA_CENTER)
-    s_td   = _s("td",  size=8.5, leading=11)
-    s_td_c = _s("tdc", size=8.5, leading=11, align=TA_CENTER)
-    s_td_r = _s("tdr", size=8.5, leading=11, align=TA_RIGHT)
+    s_th    = _s("th",  "Helvetica-Bold", 8.5, 11, color=WHITE, align=TA_CENTER)
+    s_td    = _s("td",  size=8.5, leading=11)
+    s_td_c  = _s("tdc", size=8.5, leading=11, align=TA_CENTER)
+    s_td_r  = _s("tdr", size=8.5, leading=11, align=TA_RIGHT)
     s_td_red = _s("tdrd", "Helvetica-Bold", 8.5, 11, color=RED)
+    s_sub_h = _s("subh", "Helvetica-Bold", 8.5, 11, color=RED)
+
+    taxable_items = [it for it in enabled if not it.get("non_taxable")]
+    nontax_items  = [it for it in enabled if it.get("non_taxable")]
 
     rows = [[P("S. No.", s_th), P("Description of Services", s_th),
-             P("SAC Code", s_th), P("Taxability", s_th), P("Amount (₹)", s_th)]]
-    for i, it in enumerate(enabled, 1):
-        is_nt = it.get("non_taxable", False)
-        rows.append([
-            P(str(i), s_td_c),
-            P(_desc(it), s_td_red if it.get("is_red") else s_td),
-            P("—" if is_nt else str(it.get("sac_code") or ""), s_td_c),
-            P("Non-Taxable<br/>(On Actuals)" if is_nt else "Taxable", s_td_c),
-            P(m2(float(it.get("amount") or 0)), s_td_r),
-        ])
-    svc = Table(rows, colWidths=[CW * 0.07, CW * 0.40, CW * 0.13, CW * 0.20, CW * 0.20], repeatRows=1)
-    svc.setStyle(_ts(
+             P("SAC Code", s_th), P("Amount (₹)", s_th)]]
+    style_ops = [
         ("BACKGROUND", (0, 0), (-1, 0), RED),
         ("GRID", (0, 0), (-1, -1), 0.8, BLACK),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 1), (-1, -1), 3), ("BOTTOMPADDING", (0, 1), (-1, -1), 3),
-    ))
-    story.append(svc)
-    story.append(SP(2))
+    ]
+    spans = []
 
-    # legend
-    story.append(P(
-        "<font color='#C00000'>●</font> Taxable&nbsp;&nbsp;&nbsp;&nbsp;"
-        "<font color='#2E7D32'>●</font> Non-Taxable (Actual Expenses)",
-        _s("lg", size=7.5, leading=10),
-    ))
+    def _section(title: str, group: list[dict]) -> None:
+        r = len(rows)
+        rows.append([P(title, s_sub_h), P("", s_td), P("", s_td), P("", s_td)])
+        spans.append(("SPAN", (0, r), (-1, r)))
+        style_ops.append(("BACKGROUND", (0, r), (-1, r), LIGHT))
+        for i, it in enumerate(group, 1):
+            rows.append([
+                P(str(i), s_td_c),
+                P(_desc(it), s_td_red if it.get("is_red") else s_td),
+                P("—" if it.get("non_taxable") else str(it.get("sac_code") or ""), s_td_c),
+                P(m2(float(it.get("amount") or 0)), s_td_r),
+            ])
+
+    _section("Taxable", taxable_items)
+    _section("Non-Taxable (Actual Expenses / Out-of-Pocket)", nontax_items)
+
+    svc = Table(rows, colWidths=[CW * 0.08, CW * 0.54, CW * 0.16, CW * 0.22], repeatRows=1)
+    svc.setStyle(_ts(*style_ops, *spans))
+    story.append(svc)
     story.append(SP(8))
 
     # ── 6. Important Notes (left)  +  Invoice Summary (right) ──────────────────
@@ -937,25 +955,58 @@ def generate_invoice_pdf(
     story.append(callout)
     story.append(SP(3))
 
-    # ── 8. Payment (UPI QR) + signature note ───────────────────────────────────
-    qr_block = [P("Scan to pay by UPI / IMPS / NEFT", _s("qh", "Helvetica-Bold", 8, 11, align=TA_CENTER)),
-                SP(3), Image(A_QR, width=0.85 * inch, height=0.85 * inch)]
+    # ── 8. Bank account details (configurable) + signature note ────────────────
+    s_bk_t = _s("bkt", "Helvetica-Bold", 8.5, 11, color=WHITE, align=TA_CENTER)
+    s_bk_l = _s("bkl", "Helvetica-Bold", 7.5, 10)
+    s_bk_v = _s("bkv", size=7.5, leading=10)
+
+    def _bank_table(ba: dict, width: float):
+        title = ba.get("title") or "Bank Account"
+        details = [d for d in (ba.get("details") or []) if (d.get("label") or d.get("value"))]
+        brows = [[P(title, s_bk_t), P("", s_bk_v)]]
+        for d in details:
+            brows.append([P(str(d.get("label") or ""), s_bk_l), P(str(d.get("value") or ""), s_bk_v)])
+        bt = Table(brows, colWidths=[width * 0.40, width * 0.60])
+        bt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), RED),
+            ("SPAN", (0, 0), (-1, 0)),
+            ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#D8B8B8")),
+            ("BOX", (0, 0), (-1, -1), 0.8, RED),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ]))
+        return bt
+
+    banks = [b for b in bank_accounts[:2] if (b.get("title") or b.get("details"))]
     sig_block = [P("This is a system generated report, no signature is required.",
-                   _s("sg", size=8.5, leading=12, color=DARK)),
+                   _s("sg", size=8, leading=11, color=DARK)),
                  SP(6),
-                 P(f"<b>Place:</b> New Delhi", s_kv),
+                 P("<b>Place:</b> New Delhi", s_kv),
                  P(f"<b>Date:</b> {invoice_date.strftime('%d.%m.%Y')}", s_kv)]
-    pay = Table([[qr_block, sig_block]], colWidths=[CW * 0.38, CW * 0.62])
-    pay.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (0, 0), "CENTER"),
-        ("BOX", (0, 0), (-1, -1), 0.8, HexColor("#D8B8B8")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LINEAFTER", (0, 0), (0, 0), 0.5, HexColor("#D8B8B8")),
-    ]))
-    story.append(pay)
-    story.append(SP(3))
+
+    if banks:
+        story.append(P("Bank Account Details — payment by NEFT / RTGS / IMPS",
+                       _s("bkh", "Helvetica-Bold", 8.5, 11, color=RED)))
+        story.append(SP(4))
+        if len(banks) == 2:
+            cols = [CW * 0.34, CW * 0.34, CW * 0.32]
+            cells = [_bank_table(banks[0], cols[0]), _bank_table(banks[1], cols[1]), sig_block]
+        else:
+            cols = [CW * 0.46, CW * 0.54]
+            cells = [_bank_table(banks[0], cols[0]), sig_block]
+        pay = Table([cells], colWidths=cols)
+        pay.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-2, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(pay)
+    else:
+        for f in sig_block:
+            story.append(f)
+    story.append(SP(4))
 
     # ── 9. Thank-you bar ───────────────────────────────────────────────────────
     ftr = Table([[P("Thanking You for Choosing us as your Registrar and Share Transfer Agents",
