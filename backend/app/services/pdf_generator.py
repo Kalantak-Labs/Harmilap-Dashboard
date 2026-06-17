@@ -802,7 +802,6 @@ def generate_invoice_pdf(
         _kv("Invoice No.", invoice_no),
         _kv("Invoice Date", invoice_date.strftime("%d.%m.%Y")),
         _kv("Due Date", due_date.strftime("%d.%m.%Y")),
-        _kv("Place of Supply", place),
     ], colWidths=[CW * 0.48 * 0.42, 10, CW * 0.48 * 0.46])
     details.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
