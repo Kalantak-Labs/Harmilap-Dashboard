@@ -786,30 +786,25 @@ def generate_invoice_pdf(
     story.append(svc)
     story.append(SP(6))
 
-    # ── Important notes (exact verbatim, 10 notes, no bullets) ───────────────
-    notes_9 = [
-        "This invoice is issued subject to the <b>Byelaws, Business Rules, and operational guidelines of Harmilap Share Transfer Agents</b>.",
-        "The <b>due date for payment</b> of this Tax Invoice is <b>within 60 days from the date of issue</b>.",
-        "The amount payable under this invoice should be remitted <b>only through NEFT / RTGS or by Account Payee Cheque / Demand Draft</b> in favour of <b>Harmilap Share Transfer Agents</b>.",
-        "Interest at the rate of <b>18% per annum</b> will be charged on payments delayed beyond <b>60 days</b>, calculated on a <b>monthly basis</b> until the outstanding amount is cleared.",
-        "In case any excess payment is made to the Depository or any Stamp Duty is paid to the Government on behalf of the <b>company</b>, the same shall be <b>recoverable from the company</b>.",
-        "The <b>PAN number is mentioned on the invoice only in cases where the company does not have a valid GSTIN</b>.",
-        "<b>Kindly verify the PAN and GST details mentioned in the invoice</b>. In case of any discrepancy, please inform us immediately for necessary correction before GST filing and <b>this TAX Invoice is considered in GST return only after making payment by the Issuer Client company</b>.",
-        "<b>GST returns are filed on a quarterly basis</b>. Therefore, <b>no corrections or modifications will be possible once the GST return has been filed</b>.",
-        "We are registered in MSME as Micro Enterprises and our <b>MSME Registration No: UDYAM-DL-04-0005989</b>",
+    # ── Important notes (exact verbatim, bulleted) ───────────────────────────
+    notes = [
+        "GST returns are filed by us on a quarterly basis. Accordingly, no corrections, amendments, or modifications shall be possible once the relevant GST return has been filed.",
+        "This invoice is issued subject to the Byelaws, Business Rules, and operational guidelines of Harmilap Share Transfer Agents and is subject to the exclusive jurisdiction of the Courts at Delhi.",
+        "The payment due date for this Tax Invoice is within 30 days from the date of issue. If payment is not received within the stipulated period, interest at the rate of 18% per annum may be levied in the subsequent invoice, and this invoice may be treated as cancelled.",
+        "The amount payable under this invoice should be remitted only through NEFT/RTGS or by Account Payee Cheque/Demand Draft drawn in favour of Harmilap Share Transfer Agents.",
+        "Any excess payment made to the Depository or any Stamp Duty paid to the Government on behalf of the company shall be recoverable from the company.",
+        "The PAN number is mentioned on the invoice only in cases where the company does not have a valid GSTIN.",
+        "Kindly verify the PAN and GST details mentioned in the invoice. In case of any discrepancy, please inform us immediately so that necessary corrections can be made before the filing of GST returns. GST shall be considered in our GST return only upon receipt of payment from the Issuer Company.",
+        "In the event that any dues or outstanding payments remain unpaid for more than 60 days, we reserve the right to suspend all services, deactivate the ISIN, and report the matter to the concerned Depository until all outstanding dues are fully cleared.",
     ]
-    note_10 = (
-        "If there are any dues or outstanding payments pending for more than 60 days, we will be "
-        "compelled to stop all services, deactivate the ISIN, and report the matter to the depository."
-    )
 
-    story.append(P("<b><u>Important Notes:</u></b>", s_smb))
+    s_bul = _s("bul", size=8, leading=11, align=TA_JUSTIFY, leftIndent=12, bulletIndent=2)
+
+    story.append(P("<b><u>Important Notes</u></b>", s_smb))
     story.append(SP(2))
-    for note in notes_9:
-        story.append(P(note, s_smj))
+    for note in notes:
+        story.append(Paragraph(note, s_bul, bulletText="•"))
         story.append(SP(2))
-    # Last note: 10pt bold red
-    story.append(P(f"<font size='10'><b><font color='#C00000'>{note_10}</font></b></font>", s_sm))
     story.append(SP(8))
 
     # ── Bank / UPI ────────────────────────────────────────────────────────────
