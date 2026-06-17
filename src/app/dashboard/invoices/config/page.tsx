@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, Check, GripVertical } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Check } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import type { InvoiceConfig, InvoiceLineItem } from "@/lib/types";
@@ -33,11 +33,11 @@ export default function InvoiceConfigPage() {
   const removeItem = (id: number) =>
     setItems(config!.line_items.filter((it) => it.id !== id));
 
-  const addItem = () => {
+  const addItem = (nonTax = false) => {
     const newId = Math.max(0, ...config!.line_items.map((it) => it.id)) + 1;
     setItems([...config!.line_items, {
-      id: newId, description: "", sac_code: "997159",
-      amount: 0, is_red: false, non_taxable: false, enabled: true,
+      id: newId, description: "", sac_code: nonTax ? "On Actuals" : "997159",
+      amount: 0, is_red: false, non_taxable: nonTax, enabled: true,
     }]);
   };
 
@@ -93,56 +93,62 @@ export default function InvoiceConfigPage() {
             Use <code>{"{fy}"}</code>, <code>{"{prev_fy}"}</code>, <code>{"{prev2_fy}"}</code> in descriptions for auto fiscal year substitution
           </div>
         </div>
-        <div style={{ padding: "0 18px" }}>
-          {config.line_items.map((item, idx) => (
-            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr 130px 110px auto auto auto", gap: 8, alignItems: "center", padding: "10px 0", borderBottom: idx < config.line_items.length - 1 ? "1px solid var(--border-muted)" : "none" }}>
-              <div style={{ color: "var(--text-muted)", cursor: "grab" }}><GripVertical size={14} /></div>
-
-              <input
-                className="input input-sm"
-                placeholder="Description (supports {fy} etc.)"
-                value={item.description}
-                onChange={(e) => updateItem(item.id, { description: e.target.value })}
-              />
-
-              <input
-                className="input input-sm"
-                placeholder="SAC Code"
-                value={item.sac_code}
-                onChange={(e) => updateItem(item.id, { sac_code: e.target.value })}
-              />
-
-              <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--text-muted)" }}>₹</span>
-                <input
-                  className="input input-sm"
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={item.amount}
-                  style={{ paddingLeft: 22 }}
-                  onChange={(e) => updateItem(item.id, { amount: Number(e.target.value) })}
-                />
+        <div style={{ padding: "4px 18px 12px" }}>
+          {(["A", "B"] as const).map((section) => {
+            const isB = section === "B";
+            const sectionItems = config.line_items.filter((it) => !!it.non_taxable === isB);
+            return (
+              <div key={section} style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: isB ? "#2563eb" : "var(--accent)", marginBottom: 4 }}>
+                  {isB ? "B — Non-Taxable (Actual Expenses / Out-of-Pocket)" : "A — Taxable (GST charged, per ISIN)"}
+                </div>
+                {sectionItems.map((item) => (
+                  <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 130px 110px auto auto auto", gap: 8, alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-muted)" }}>
+                    <input
+                      className="input input-sm"
+                      placeholder="Description (supports {fy} etc.)"
+                      value={item.description}
+                      onChange={(e) => updateItem(item.id, { description: e.target.value })}
+                    />
+                    <input
+                      className="input input-sm"
+                      placeholder={isB ? "On Actuals" : "SAC Code"}
+                      value={item.sac_code}
+                      onChange={(e) => updateItem(item.id, { sac_code: e.target.value })}
+                    />
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--text-muted)" }}>₹</span>
+                      <input
+                        className="input input-sm"
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={item.amount}
+                        style={{ paddingLeft: 22 }}
+                        onChange={(e) => updateItem(item.id, { amount: Number(e.target.value) })}
+                      />
+                    </div>
+                    {!isB ? (
+                      <label title="Show in red (for outstanding/conditional items)" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: item.is_red ? "#C00000" : "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                        <input type="checkbox" checked={item.is_red} onChange={(e) => updateItem(item.id, { is_red: e.target.checked })} style={{ accentColor: "#C00000" }} />
+                        Red
+                      </label>
+                    ) : <span />}
+                    <label title="Include in invoice" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: item.enabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={item.enabled} onChange={(e) => updateItem(item.id, { enabled: e.target.checked })} style={{ accentColor: "var(--accent)" }} />
+                      {item.enabled ? "On" : "Off"}
+                    </label>
+                    <button className="btn btn-ghost btn-sm btn-icon" onClick={() => removeItem(item.id)} style={{ color: "var(--danger)" }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 6 }} onClick={() => addItem(isB)}>
+                  <Plus size={13} /> Add {isB ? "non-taxable" : "taxable"} particular
+                </button>
               </div>
-
-              <label title="Show in red (for outstanding/conditional items)" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: item.is_red ? "#C00000" : "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
-                <input type="checkbox" checked={item.is_red} onChange={(e) => updateItem(item.id, { is_red: e.target.checked })} style={{ accentColor: "#C00000" }} />
-                Red
-              </label>
-
-              <label title="Include in invoice" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: item.enabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer" }}>
-                <input type="checkbox" checked={item.enabled} onChange={(e) => updateItem(item.id, { enabled: e.target.checked })} style={{ accentColor: "var(--accent)" }} />
-                {item.enabled ? "On" : "Off"}
-              </label>
-
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => removeItem(item.id)} style={{ color: "var(--danger)" }}>
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div style={{ padding: "10px 18px" }}>
-          <button className="btn btn-ghost btn-sm" onClick={addItem}><Plus size={13} /> Add particular</button>
+            );
+          })}
         </div>
       </div>
 

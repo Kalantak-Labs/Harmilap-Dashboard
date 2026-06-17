@@ -196,10 +196,10 @@ async def _find_invoice(party: dict, fy: str, db: AsyncSession) -> Optional[Invo
 def _grand_total(particulars: list[dict], gst_type: str,
                  igst_rate: float, cgst_rate: float, sgst_rate: float,
                  units: int = 1) -> float:
-    """Particular amounts are per-ISIN; multiply by chargeable units."""
+    """Taxable amounts are per-ISIN (× units); non-taxable are flat actual expenses."""
     enabled = [p for p in particulars if p.get("enabled", True)]
     taxable = sum(float(p.get("amount") or 0) for p in enabled if not p.get("non_taxable")) * units
-    non_taxable = sum(float(p.get("amount") or 0) for p in enabled if p.get("non_taxable")) * units
+    non_taxable = sum(float(p.get("amount") or 0) for p in enabled if p.get("non_taxable"))
     if gst_type == "IGST":
         gst = round(taxable * igst_rate / 100)
     else:
@@ -281,11 +281,13 @@ def _company_dict_for_pdf(party: dict) -> dict:
 def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
     out = _build_out(party, inv, cfg)
     units = party.get("isin_units", 1)
-    # Particular amounts are per-ISIN — scale to the chargeable units for the invoice.
+    # Taxable amounts are per-ISIN — scale by chargeable units. Non-taxable
+    # (actual expenses / out-of-pocket) are flat and left as entered.
     line_items = []
     for p in out.particulars:
         d = p.model_dump()
-        d["amount"] = (d.get("amount") or 0) * units
+        if not d.get("non_taxable"):
+            d["amount"] = (d.get("amount") or 0) * units
         line_items.append(d)
     config = {
         "line_items": line_items,

@@ -698,77 +698,89 @@ def generate_invoice_pdf(
         ))
         story.append(SP(6))
 
-    # ── Service items table ───────────────────────────────────────────────────
-    svc_rows = [
-        [P("S. No.", s_cb), P("Description of Services", s_cb),
-         P("SAC Code", s_cb), P("Amount (Rs.)", s_cb)],
-    ]
-
+    # ── Service items — Section A (Taxable) and Section B (Non-Taxable) ────────
     enabled = [it for it in items if it.get("enabled", True)]
-    taxable_total = non_taxable_total = 0
 
-    for idx, it in enumerate(enabled, 1):
-        desc   = (it.get("description") or "").replace("{fy}", fy).replace("{prev_fy}", p_fy).replace("{prev2_fy}", p2_fy)
-        sac    = str(it.get("sac_code") or "")
-        amt    = float(it.get("amount") or 0)
-        is_nt  = it.get("non_taxable", False)
-        is_red = it.get("is_red", False)
-        if is_nt:
-            non_taxable_total += amt
-        else:
-            taxable_total += amt
-        svc_rows.append([
+    def _desc(it: dict) -> str:
+        return (it.get("description") or "").replace("{fy}", fy).replace("{prev_fy}", p_fy).replace("{prev2_fy}", p2_fy)
+
+    taxable_items = [it for it in enabled if not it.get("non_taxable", False)]
+    nontax_items  = [it for it in enabled if it.get("non_taxable", False)]
+
+    taxable_total     = sum(float(it.get("amount") or 0) for it in taxable_items)
+    non_taxable_total = sum(float(it.get("amount") or 0) for it in nontax_items)
+
+    if gst_type == "IGST":
+        cgst = sgst = utgst = 0
+        igst = round(taxable_total * igst_rate / 100)
+    else:
+        cgst  = round(taxable_total * cgst_rate / 100)
+        sgst  = round(taxable_total * sgst_rate / 100)
+        igst = utgst = 0
+    gst_amt = cgst + sgst + igst + utgst
+    total_a = taxable_total + gst_amt        # A: taxable + GST
+    total_b = non_taxable_total              # B: actual expenses
+    grand   = total_a + total_b
+
+    s_lbl   = _s("lbl",  "Helvetica",      10, 13, align=TA_RIGHT)
+    s_lbl_b = _s("lblb", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
+    s_amt   = _s("amt",  "Helvetica",      10, 13, align=TA_RIGHT)
+    s_amt_b = _s("amtb", "Helvetica-Bold", 10, 13, align=TA_RIGHT)
+
+    def money(v: float) -> str:
+        return f"{int(round(v)):,}" if v else "0"
+
+    rows: list = []
+    style_ops: list = []
+    spans: list = []
+
+    def add_header(desc_label: str, sac_label: str) -> None:
+        r = len(rows)
+        rows.append([P("S. No.", s_cb), P(desc_label, s_cb), P(sac_label, s_cb), P("Amount (Rs.)", s_cb)])
+        style_ops.append(("BACKGROUND", (0, r), (-1, r), GRAY_MID))
+        style_ops.append(("FONT", (0, r), (-1, r), "Helvetica-Bold", 10))
+
+    def add_item(idx: int, it: dict) -> None:
+        rows.append([
             P(str(idx), s_c),
-            P(desc, s_red if is_red else s_body),
-            P(sac, s_c),
-            P(f"{int(amt):,}" if amt else "0", s_r),
+            P(_desc(it), s_red if it.get("is_red", False) else s_body),
+            P(str(it.get("sac_code") or ""), s_c),
+            P(money(float(it.get("amount") or 0)), s_r),
         ])
 
-    n_items = len(enabled)
-    sub_r = n_items + 1  # 0-based index of first subtotal row
+    def add_label(label: str, val: float, bold: bool = False, shade: bool = False) -> None:
+        r = len(rows)
+        rows.append([P(label, s_lbl_b if bold else s_lbl), P("", s_body), P("", s_body),
+                     P(money(val), s_amt_b if bold else s_amt)])
+        spans.append(("SPAN", (0, r), (2, r)))   # right-aligned label spans S.No+Description+SAC
+        if shade:
+            style_ops.append(("BACKGROUND", (0, r), (-1, r), GRAY_MID))
 
-    def sub_row(label: str, val: float, bold: bool = False):
-        ls = _s("sl", "Helvetica-Bold" if bold else "Helvetica", 10, 13, align=TA_RIGHT)
-        vs = _s("sv", "Helvetica-Bold" if bold else "Helvetica", 10, 13, align=TA_RIGHT)
-        return [P("", s_body), P("", s_body), P(label, ls), P(f"{int(val):,}" if val else "0", vs)]
+    # Section A — Taxable
+    add_header("Description of Services — Taxable", "SAC Code")
+    for i, it in enumerate(taxable_items, 1):
+        add_item(i, it)
+    add_label("Total Taxable Value (GST charged)", taxable_total, bold=True, shade=True)
+    add_label(f"CGST ({cgst_rate:.0f}%)", cgst)
+    add_label(f"SGST ({sgst_rate:.0f}%)", sgst)
+    add_label(f"IGST ({igst_rate:.0f}%)", igst)
+    add_label(f"UTGST ({igst_rate:.0f}%)", utgst)
+    add_label("Total Amount to be Paid (In Figures) — A", total_a, bold=True, shade=True)
 
-    svc_rows.append(sub_row("Non-Taxable Value (Actual Expenses / Out-of-Pocket)", non_taxable_total))
-    svc_rows.append(sub_row("Total Taxable Value (GST charged)", taxable_total, bold=True))
+    # Section B — Non-Taxable
+    add_header("Description of Services — Non-Taxable", "")
+    for i, it in enumerate(nontax_items, 1):
+        add_item(i, it)
+    add_label("Non-Taxable Value (Actual Expenses / Out-of-Pocket) — B", total_b, bold=True, shade=True)
 
-    gst_amt = 0.0
-    if gst_type == "IGST":
-        igst = round(taxable_total * igst_rate / 100)
-        gst_amt = igst
-        svc_rows.append(sub_row("CGST (9%)", 0))
-        svc_rows.append(sub_row("SGST (9%)", 0))
-        svc_rows.append(sub_row(f"IGST ({igst_rate:.0f}%)", igst))
-        svc_rows.append(sub_row("UTSGT (18%)", 0))   # matches template spelling
-    else:
-        cgst = round(taxable_total * cgst_rate / 100)
-        sgst = round(taxable_total * sgst_rate / 100)
-        gst_amt = cgst + sgst
-        svc_rows.append(sub_row(f"CGST ({cgst_rate:.0f}%)", cgst))
-        svc_rows.append(sub_row(f"SGST ({sgst_rate:.0f}%)", sgst))
-        svc_rows.append(sub_row("IGST (18%)", 0))
-        svc_rows.append(sub_row("UTSGT (18%)", 0))
+    # Grand total (A + B)
+    add_label("Total Amount to be Paid (In Figures) (A + B)", grand, bold=True, shade=True)
 
-    grand = taxable_total + gst_amt + non_taxable_total
-    svc_rows.append(sub_row("Total Amount to be Paid (In Figures)", grand, bold=True))
-
-    n_svc = len(svc_rows)
-    spans = [("SPAN", (0, r), (1, r)) for r in range(sub_r, n_svc)]
-
-    svc = Table(svc_rows, colWidths=[CW * 0.07, CW * 0.62, CW * 0.13, CW * 0.18], repeatRows=1)
+    svc = Table(rows, colWidths=[CW * 0.07, CW * 0.59, CW * 0.16, CW * 0.18])
     svc.setStyle(_ts(
-        ("BACKGROUND", (0, 0),         (-1, 0),            GRAY_MID),
-        ("FONT",       (0, 0),         (-1, 0),            "Helvetica-Bold", 10),
-        ("ALIGN",      (0, 1),         (0, n_items),       "CENTER"),
-        ("ALIGN",      (3, 1),         (3, -1),            "RIGHT"),
-        ("ALIGN",      (2, sub_r),     (2, -1),            "RIGHT"),
-        ("BACKGROUND", (0, sub_r),     (-1, sub_r),        GRAY_MID),
-        ("BACKGROUND", (0, sub_r + 1), (-1, sub_r + 1),   GRAY_MID),
-        ("FONT",       (2, -1),        (3, -1),            "Helvetica-Bold", 10),
-        ("GRID",       (0, 0),         (-1, -1),           1.2, BLACK),
+        ("ALIGN", (3, 0), (3, -1), "RIGHT"),
+        ("GRID",  (0, 0), (-1, -1), 1.0, BLACK),
+        *style_ops,
         *spans,
     ))
     story.append(svc)

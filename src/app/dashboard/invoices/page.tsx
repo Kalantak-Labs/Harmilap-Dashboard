@@ -17,7 +17,7 @@ function computeTotal(
 ): number {
   const enabled = particulars.filter((p) => p.enabled);
   const taxable = enabled.filter((p) => !p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0) * units;
-  const nonTax = enabled.filter((p) => p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0) * units;
+  const nonTax = enabled.filter((p) => p.non_taxable).reduce((s, p) => s + (p.amount || 0), 0); // flat — actual expenses
   const gst = gstType === "IGST"
     ? Math.round(taxable * igst / 100)
     : Math.round(taxable * cgst / 100) + Math.round(taxable * sgst / 100);
@@ -130,13 +130,13 @@ export default function InvoicesPage() {
       particulars: inv.particulars.map((it) => it.id === id ? { ...it, ...p } : it),
     } : inv);
 
-  const addParticular = () =>
+  const addParticular = (nonTax = false) =>
     setEditing((inv) => inv ? {
       ...inv,
       particulars: [...inv.particulars, {
         id: Math.max(0, ...inv.particulars.map((p) => p.id)) + 1,
-        description: "", sac_code: "997159", amount: 0,
-        is_red: false, non_taxable: false, enabled: true,
+        description: "", sac_code: nonTax ? "On Actuals" : "997159", amount: 0,
+        is_red: false, non_taxable: nonTax, enabled: true,
       }],
     } : inv);
 
@@ -202,32 +202,40 @@ export default function InvoicesPage() {
 
             {/* Particulars */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-muted)" }}>Particulars <span style={{ textTransform: "none", fontWeight: 400 }}>(amounts are per ISIN)</span></div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>× <b>{editUnits}</b> ISIN unit(s) on the invoice</div>
+              <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-muted)" }}>Particulars</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Taxable × <b>{editUnits}</b> ISIN unit(s); non-taxable are flat</div>
             </div>
-            {editing.particulars.map((item, idx) => (
-              <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px auto auto auto", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: idx < editing.particulars.length - 1 ? "1px solid var(--border-muted)" : "none" }}>
-                <input className="input input-sm" placeholder="Description" value={item.description}
-                  onChange={(e) => patchParticular(item.id, { description: e.target.value })} />
-                <input className="input input-sm" placeholder="SAC Code" value={item.sac_code}
-                  onChange={(e) => patchParticular(item.id, { sac_code: e.target.value })} />
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--text-muted)" }}>₹</span>
-                  <input className="input input-sm" type="number" min="0" value={item.amount} style={{ paddingLeft: 22 }}
-                    onChange={(e) => patchParticular(item.id, { amount: Number(e.target.value) })} />
+            {(["A", "B"] as const).map((section) => {
+              const isB = section === "B";
+              const rowsInSection = editing.particulars.filter((p) => !!p.non_taxable === isB);
+              return (
+                <div key={section} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: isB ? "#2563eb" : "var(--accent)", margin: "4px 0 2px" }}>
+                    {isB ? "B — Non-Taxable (Actual Expenses / Out-of-Pocket)" : "A — Taxable (GST charged, per ISIN)"}
+                  </div>
+                  {rowsInSection.map((item) => (
+                    <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px auto auto", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border-muted)" }}>
+                      <input className="input input-sm" placeholder="Description" value={item.description}
+                        onChange={(e) => patchParticular(item.id, { description: e.target.value })} />
+                      <input className="input input-sm" placeholder={isB ? "On Actuals" : "SAC Code"} value={item.sac_code}
+                        onChange={(e) => patchParticular(item.id, { sac_code: e.target.value })} />
+                      <div style={{ position: "relative" }}>
+                        <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "var(--text-muted)" }}>₹</span>
+                        <input className="input input-sm" type="number" min="0" value={item.amount} style={{ paddingLeft: 22 }}
+                          onChange={(e) => patchParticular(item.id, { amount: Number(e.target.value) })} />
+                      </div>
+                      <label title="Include in invoice" style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: item.enabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer" }}>
+                        <input type="checkbox" checked={item.enabled} onChange={(e) => patchParticular(item.id, { enabled: e.target.checked })} style={{ accentColor: "var(--accent)" }} /> {item.enabled ? "On" : "Off"}
+                      </label>
+                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => removeParticular(item.id)} style={{ color: "var(--danger)" }}><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 4 }} onClick={() => addParticular(isB)}>
+                    <Plus size={13} /> Add {isB ? "non-taxable" : "taxable"} particular
+                  </button>
                 </div>
-                <label title="Show in red" style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: item.is_red ? "#C00000" : "var(--text-muted)", cursor: "pointer" }}>
-                  <input type="checkbox" checked={item.is_red} onChange={(e) => patchParticular(item.id, { is_red: e.target.checked })} style={{ accentColor: "#C00000" }} /> Red
-                </label>
-                <label title="Include" style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: item.enabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer" }}>
-                  <input type="checkbox" checked={item.enabled} onChange={(e) => patchParticular(item.id, { enabled: e.target.checked })} style={{ accentColor: "var(--accent)" }} /> {item.enabled ? "On" : "Off"}
-                </label>
-                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => removeParticular(item.id)} style={{ color: "var(--danger)" }}><Trash2 size={13} /></button>
-              </div>
-            ))}
-            <div style={{ padding: "8px 0 12px" }}>
-              <button className="btn btn-ghost btn-sm" onClick={addParticular}><Plus size={13} /> Add particular</button>
-            </div>
+              );
+            })}
 
             {/* GST + Payment */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 6 }}>
