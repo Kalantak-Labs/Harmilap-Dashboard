@@ -10,6 +10,7 @@ import ConfirmModal from "@/components/ui/ConfirmModal";
 import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
 import type { Company } from "@/lib/types";
 import { securityTypeFromISIN } from "@/lib/isin";
+import { INDIAN_STATES_UTS } from "@/lib/constants";
 
 type EditState = Partial<Company> & {
   face_value?: string | number | null;
@@ -241,7 +242,12 @@ export default function CompanyDetailPage() {
           <Field label="Line 3" value={editing ? inp("reg_address_line3") : company.reg_address_line3} />
           <Field label="Line 4" value={editing ? inp("reg_address_line4") : company.reg_address_line4} />
           <Field label="City" value={editing ? inp("reg_city") : company.reg_city} />
-          <Field label="State" value={editing ? inp("state") : company.state} />
+          <Field label="State" value={editing ? (
+            <select className="input input-sm" value={(form.state as string) ?? ""} onChange={(e) => set("state", e.target.value)}>
+              <option value="">Select state / UT…</option>
+              {INDIAN_STATES_UTS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : company.state} />
           <Field label="Pin Code" value={editing ? inp("reg_pin_code") : company.reg_pin_code} />
           <Field label="Complete Address" value={(() => {
             const s = editing ? form : company;

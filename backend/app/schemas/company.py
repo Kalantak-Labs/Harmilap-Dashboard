@@ -1,7 +1,25 @@
+import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, field_validator, model_validator
+
+# All Indian States + Union Territories (single-select dropdown values)
+INDIAN_STATES_UTS = [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
+    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+    "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan",
+    "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+    "Andaman and Nicobar Islands", "Chandigarh",
+    "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh",
+    "Lakshadweep", "Puducherry",
+]
+_STATES_SET = set(INDIAN_STATES_UTS)
+
+_ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+# 2-digit state + 10-char PAN (5 letters, 4 digits, 1 letter) + entity + 'Z' + check
+_GST_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
+_PIN_RE = re.compile(r"^[0-9]{6}$")
 
 
 def _non_negative(v: int | None) -> int | None:
@@ -10,17 +28,67 @@ def _non_negative(v: int | None) -> int | None:
     return v
 
 
+def _isin_check_digit_ok(isin: str) -> bool:
+    """ISIN Luhn check: letters → numbers (A=10..Z=35), then mod-10 Luhn over the digits."""
+    s = "".join(str(ord(c) - 55) if c.isalpha() else c for c in isin)
+    total, dbl = 0, False
+    for ch in reversed(s):
+        d = int(ch)
+        if dbl:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+        dbl = not dbl
+    return total % 10 == 0
+
+
 def _validate_isin(v: str | None) -> str | None:
-    """Validate ISIN format only when a value is provided."""
+    """ISIN = 2 letters (country) + 9 alphanumeric + 1 numeric check digit (Luhn)."""
     if v is None:
         return None
     v = v.strip().upper()
     if not v:
         return None
-    if len(v) != 12:
-        raise ValueError(f"ISIN must be exactly 12 characters (got {len(v)})")
-    if not v.isalnum():
-        raise ValueError("ISIN must contain only letters and numbers")
+    if not _ISIN_RE.match(v):
+        raise ValueError("ISIN must be 12 characters: 2 letters + 9 alphanumeric + 1 check digit")
+    if not _isin_check_digit_ok(v):
+        raise ValueError("ISIN check digit is invalid")
+    return v
+
+
+def _validate_gst(v: str | None) -> str | None:
+    """GSTIN = 15 chars: 2-digit state + 10-char PAN + entity char + 'Z' + check char."""
+    if v is None:
+        return None
+    v = v.strip().upper()
+    if not v:
+        return None
+    if not _GST_RE.match(v):
+        raise ValueError("GST number must be 15 characters: NNAAAAANNNNA1ZC "
+                         "(state code + PAN + entity + Z + check)")
+    return v
+
+
+def _validate_pincode(v: str | None) -> str | None:
+    if v is None:
+        return None
+    v = str(v).strip()
+    if not v:
+        return None
+    if not _PIN_RE.match(v):
+        raise ValueError("Pin Code must be exactly 6 digits")
+    return v
+
+
+def _validate_state(v: str | None) -> str | None:
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if v not in _STATES_SET:
+        raise ValueError("State must be a valid Indian State / Union Territory")
     return v
 
 
@@ -96,6 +164,22 @@ class CompanyCreate(CompanyBase):
     @classmethod
     def validate_nsdl_rta(cls, v: str | None) -> str | None:
         return _validate_nsdl_rta(v)
+
+    @field_validator("gst_number")
+    @classmethod
+    def validate_gst(cls, v: str | None) -> str | None:
+        return _validate_gst(v)
+
+    @field_validator("reg_pin_code")
+    @classmethod
+    def validate_pincode(cls, v: str | None) -> str | None:
+        return _validate_pincode(v)
+
+    @field_validator("state")
+    @classmethod
+    def validate_state(cls, v: str | None) -> str | None:
+        return _validate_state(v)
+
     @model_validator(mode="after")
     def require_isin_or_arn(self) -> "CompanyCreate":
         if not self.isin_code and not self.arn_number:
@@ -147,6 +231,21 @@ class CompanyUpdate(BaseModel):
     @classmethod
     def validate_nsdl_rta(cls, v: str | None) -> str | None:
         return _validate_nsdl_rta(v)
+
+    @field_validator("gst_number")
+    @classmethod
+    def validate_gst(cls, v: str | None) -> str | None:
+        return _validate_gst(v)
+
+    @field_validator("reg_pin_code")
+    @classmethod
+    def validate_pincode(cls, v: str | None) -> str | None:
+        return _validate_pincode(v)
+
+    @field_validator("state")
+    @classmethod
+    def validate_state(cls, v: str | None) -> str | None:
+        return _validate_state(v)
 
     # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
     @field_validator("total_shares", "nsdl_shares", "cdsl_shares")

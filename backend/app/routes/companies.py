@@ -13,7 +13,10 @@ from app.models.company import Company
 from app.models.beneficiary import Beneficiary, BenposLockin
 from app.models.generated_invoice import GeneratedInvoice
 from app.models.user import User
-from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyOut, CompanyListOut, IngestResult, CompanyStats
+from app.schemas.company import (
+    CompanyCreate, CompanyUpdate, CompanyOut, CompanyListOut, IngestResult, CompanyStats,
+    _validate_isin,
+)
 from app.services.excel import parse_excel, build_export_excel
 from app.dependencies import get_current_user, require_permission
 
@@ -173,11 +176,13 @@ async def ingest_excel(
         isin = row.get("isin_code")
         arn = row.get("arn_number")
 
-        # Normalise ISIN — validate format only when present
+        # Normalise ISIN — validate full format (structure + Luhn) when present
         if isin:
             isin = str(isin).strip().upper()
-            if len(isin) != 12 or not isin.isalnum():
-                errors.append(f"ISIN '{isin}': invalid format (must be 12 alphanumeric characters) — skipped")
+            try:
+                isin = _validate_isin(isin)
+            except ValueError as e:
+                errors.append(f"ISIN '{isin}': {e} — skipped")
                 skipped += 1
                 continue
             row["isin_code"] = isin

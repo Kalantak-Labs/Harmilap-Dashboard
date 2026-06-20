@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
 import { securityTypeFromISIN } from "@/lib/isin";
+import { INDIAN_STATES_UTS } from "@/lib/constants";
 
 interface Props { onClose: () => void; onCreated: () => void; }
 
@@ -212,7 +213,10 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
               </div>
               <div className="form-group">
                 <label className="form-label">State</label>
-                <input className="input" value={form.state} onChange={(e) => set("state", e.target.value)} />
+                <select className="input" value={form.state} onChange={(e) => set("state", e.target.value)}>
+                  <option value="">Select state / UT…</option>
+                  {INDIAN_STATES_UTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">Pin Code</label>
