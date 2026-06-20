@@ -114,19 +114,27 @@ export default function CompanyDetailPage() {
   };
 
   const startEditing = () => {
-    // If security_type is missing, auto-derive from ISIN
-    const detected = company!.isin_code ? securityTypeFromISIN(company!.isin_code) : null;
-    setForm({
-      ...company!,
-      ...(detected && !company!.security_type ? { security_type: detected } : {}),
-    });
+    setForm({ ...company! });
     setEditing(true);
+  };
+
+  const handleIsinChange = (v: string) => {
+    const upper = v.toUpperCase();
+    setForm((f) => ({
+      ...f,
+      isin_code: upper,
+      security_type: securityTypeFromISIN(upper),
+    }));
   };
 
   const cancelEdit = () => { setForm(company!); setEditing(false); };
 
   if (loading) return <div className="spinner-center"><span className="spinner spinner-lg" /></div>;
   if (!company) return null;
+
+  const displaySecurityType = editing
+    ? (form.isin_code ? securityTypeFromISIN(form.isin_code) : null)
+    : company.security_type;
 
   const inp = (field: keyof EditState, type = "text") => (
     <input
@@ -192,7 +200,7 @@ export default function CompanyDetailPage() {
         <div className="detail-grid">
           <div className="detail-section-title">Core Information</div>
           <Field label="ISIN Code" required={editing} value={editing
-            ? inp("isin_code")
+            ? <input className="input input-sm" value={form.isin_code ?? ""} onChange={(e) => handleIsinChange(e.target.value)} />
             : company.isin_code
               ? <code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.isin_code}</code>
               : null}
@@ -206,7 +214,9 @@ export default function CompanyDetailPage() {
           <Field label="Company Name" value={editing ? inp("company_name") : company.company_name} />
           <Field label="NSDL RTA Code" required={editing} value={editing ? inp("nsdl_rta_code") : company.nsdl_rta_code} />
           <Field label="CDSL RTA Code" required={editing} value={editing ? inp("cdsl_rta_code") : company.cdsl_rta_code} />
-          <Field label="Security Type" value={editing ? inp("security_type") : company.security_type ? <span className="badge badge-gray">{company.security_type}</span> : null} />
+          <Field label="Security Type" value={displaySecurityType
+            ? <span className="badge badge-gray">{displaySecurityType}</span>
+            : <span style={{ color: "var(--text-muted)" }}>—</span>} />
           <Field label="Face Value" required={editing} value={editing
             ? <FaceValueField
                 value={form.face_value ?? null}

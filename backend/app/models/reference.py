@@ -15,3 +15,10 @@ class PanHolderType(Base):
     __tablename__ = "pan_holder_types"
     code = Column(String(1), primary_key=True)
     meaning = Column(String(100), nullable=False)
+
+
+class IsinSecurityType(Base):
+    """ISIN digits 8–9 → security type (seeded reference table)."""
+    __tablename__ = "isin_security_types"
+    code = Column(String(2), primary_key=True)
+    security_type = Column(String(200), nullable=False)

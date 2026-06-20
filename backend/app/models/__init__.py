@@ -8,12 +8,12 @@ from app.models.invoice_pdf_archive import InvoicePdfArchive
 from app.models.email_settings import EmailSettings, EmailTemplate
 from app.models.action_log import ActionLog
 from app.models.billing import BillingPartySettings, BillingInvoice, BillingPayment
-from app.models.reference import GstStateCode, PanHolderType
+from app.models.reference import GstStateCode, PanHolderType, IsinSecurityType
 
 __all__ = [
     "User", "Session", "Company", "Beneficiary", "BenposLockin",
     "InvoiceConfig", "GeneratedInvoice", "Invoice", "InvoicePdfArchive",
-    "EmailSettings", "EmailTemplate", "GstStateCode", "PanHolderType",
+    "EmailSettings", "EmailTemplate", "GstStateCode", "PanHolderType", "IsinSecurityType",
     "ActionLog",
     "BillingPartySettings", "BillingInvoice", "BillingPayment",
 ]

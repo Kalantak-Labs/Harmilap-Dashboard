@@ -18,7 +18,7 @@ from app.schemas.company import (
     _validate_isin,
     validate_company_write_required,
 )
-from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
+from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES, security_type_from_isin
 from app.services.excel import parse_excel, build_export_excel
 from app.services.action_log import log_action, model_to_log_dict, diff_fields, company_label, COMPANY_AUDIT_IGNORE
 from app.dependencies import get_current_user, require_permission
@@ -45,7 +45,7 @@ def _sync_depository_flags(company: Company) -> None:
 
 
 def _derive_company_info(company: Company) -> None:
-    """Fill PAN from GST when missing, derive PAN holder type and the GST state."""
+    """Fill PAN from GST when missing, derive PAN holder type, GST state, and ISIN security type."""
     gst = (company.gst_number or "").strip().upper()
     # GST chars 3–12 are the PAN — use it when PAN is not provided.
     if not (company.pan_number or "").strip() and len(gst) == 15:
@@ -55,6 +55,9 @@ def _derive_company_info(company: Company) -> None:
     # GST state code (first 2 digits) → state, only when state is not set manually.
     if not (company.state or "").strip() and len(gst) >= 2:
         company.state = GST_STATE_CODES.get(gst[:2])
+    # ISIN digits 8–9 → security type; blank when no ISIN.
+    isin = (company.isin_code or "").strip().upper()
+    company.security_type = security_type_from_isin(isin) if isin else None
 
 
 def _apply_search(query, search: str | None):

@@ -70,7 +70,7 @@ def company_label(company) -> str:
 
 
 AUDIT_IGNORE_COMMON = frozenset({"created_at", "updated_at"})
-COMPANY_AUDIT_IGNORE = AUDIT_IGNORE_COMMON | frozenset({"created_by", "updated_by", "physical_shares", "pan_holder_type"})
+COMPANY_AUDIT_IGNORE = AUDIT_IGNORE_COMMON | frozenset({"created_by", "updated_by", "physical_shares", "pan_holder_type", "security_type"})
 USER_AUDIT_IGNORE = AUDIT_IGNORE_COMMON | frozenset({"password_hash"})
 INVOICE_AUDIT_IGNORE = AUDIT_IGNORE_COMMON | frozenset({"last_generated_at"})
 

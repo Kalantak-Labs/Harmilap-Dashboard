@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate, GstStateCode, PanHolderType, ActionLog, BillingPartySettings, BillingInvoice, BillingPayment  # ensure models are registered
-from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
+from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate, GstStateCode, PanHolderType, IsinSecurityType, ActionLog, BillingPartySettings, BillingInvoice, BillingPayment  # ensure models are registered
+from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES, ISIN_SECURITY_TYPES
 from app.schemas.company import INDIAN_STATES_UTS
 from app.routes import auth, users, companies, beneficiaries, reports, emails, invoices, action_logs, billings
 
@@ -51,6 +51,13 @@ async def lifespan(app: FastAPI):
             f"INSERT INTO pan_holder_types (code, meaning) VALUES {pan_vals} "
             "ON CONFLICT (code) DO UPDATE SET meaning = EXCLUDED.meaning"
         ))
+        isin_sec_vals = ",".join(
+            f"('{k}','{v.replace(chr(39), chr(39) * 2)}')" for k, v in ISIN_SECURITY_TYPES.items()
+        )
+        await conn.execute(text(
+            f"INSERT INTO isin_security_types (code, security_type) VALUES {isin_sec_vals} "
+            "ON CONFLICT (code) DO UPDATE SET security_type = EXCLUDED.security_type"
+        ))
 
         # Clear bad values so the read-side validators never reject stored data
         await conn.execute(text("UPDATE companies SET gst_number = upper(trim(gst_number)) WHERE gst_number IS NOT NULL"))
@@ -86,6 +93,16 @@ async def lifespan(app: FastAPI):
             "UPDATE companies SET state = "
             "(SELECT state FROM gst_state_codes g WHERE g.code = substr(gst_number, 1, 2)) "
             "WHERE (state IS NULL OR state = '') AND gst_number IS NOT NULL AND char_length(gst_number) = 15"
+        ))
+        await conn.execute(text(
+            "UPDATE companies SET security_type = NULL "
+            "WHERE isin_code IS NULL OR trim(isin_code) = ''"
+        ))
+        await conn.execute(text(
+            "UPDATE companies SET security_type = ("
+            "SELECT security_type FROM isin_security_types i "
+            "WHERE i.code = substr(upper(trim(isin_code)), 8, 2)"
+            ") WHERE isin_code IS NOT NULL AND char_length(trim(isin_code)) >= 9"
         ))
 
         # companies: a filled NSDL/CDSL RTA code marks presence in that depository

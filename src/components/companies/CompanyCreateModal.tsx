@@ -14,7 +14,6 @@ interface Props { onClose: () => void; onCreated: () => void; }
 export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   const { push } = useToast();
   const [loading, setLoading] = useState(false);
-  const [secAutoFilled, setSecAutoFilled] = useState(false);
   const [form, setForm] = useState({
     isin_code: "", arn_number: "", company_name: "", nsdl_rta_code: "", cdsl_rta_code: "",
     email_ids: [] as string[], contact_numbers: [] as string[],
@@ -30,20 +29,15 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleIsinChange = (isin: string) => {
-    const detected = securityTypeFromISIN(isin);
+    const upper = isin.toUpperCase();
     setForm((f) => ({
       ...f,
-      isin_code: isin,
-      // Auto-fill when field is empty or was previously auto-filled
-      ...(detected !== null && (secAutoFilled || !f.security_type) ? { security_type: detected } : {}),
+      isin_code: upper,
+      security_type: securityTypeFromISIN(upper) ?? "",
     }));
-    if (detected !== null) setSecAutoFilled(true);
   };
 
-  const handleSecurityTypeChange = (v: string) => {
-    set("security_type", v);
-    setSecAutoFilled(false);
-  };
+  const derivedSecurityType = form.isin_code ? securityTypeFromISIN(form.isin_code) : null;
 
   const isinLen = form.isin_code.trim().length;
   const isinEntered = isinLen > 0;
@@ -136,13 +130,16 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <label className="form-label">Security Type</label>
                 <input
                   className="input"
-                  value={form.security_type}
-                  onChange={(e) => handleSecurityTypeChange(e.target.value)}
-                  placeholder="Auto-filled from ISIN…"
+                  readOnly
+                  value={derivedSecurityType ?? ""}
+                  placeholder={form.isin_code ? "Unmapped ISIN type code" : "Set from ISIN (digits 8–9)"}
+                  style={{ background: "var(--bg)", color: "var(--text-secondary)" }}
                 />
-                {secAutoFilled && (
+                {form.isin_code && (
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-                    Auto-detected from ISIN — edit freely
+                    {derivedSecurityType
+                      ? "Derived automatically from ISIN"
+                      : "No mapping for this ISIN type code — left blank"}
                   </div>
                 )}
               </div>
