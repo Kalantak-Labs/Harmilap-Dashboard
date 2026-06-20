@@ -19,6 +19,7 @@ _STATES_SET = set(INDIAN_STATES_UTS)
 _ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 # 2-digit state + 10-char PAN (5 letters, 4 digits, 1 letter) + entity + 'Z' + check
 _GST_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
+_PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
 _PIN_RE = re.compile(r"^[0-9]{6}$")
 
 
@@ -67,6 +68,18 @@ def _validate_gst(v: str | None) -> str | None:
     if not _GST_RE.match(v):
         raise ValueError("GST number must be 15 characters: NNAAAAANNNNA1ZC "
                          "(state code + PAN + entity + Z + check)")
+    return v
+
+
+def _validate_pan(v: str | None) -> str | None:
+    """PAN = 10 chars: 5 letters + 4 digits + 1 letter (e.g. AAACC1234F)."""
+    if v is None:
+        return None
+    v = v.strip().upper()
+    if not v:
+        return None
+    if not _PAN_RE.match(v):
+        raise ValueError("PAN must be 10 characters: 5 letters + 4 digits + 1 letter")
     return v
 
 
@@ -125,6 +138,7 @@ class CompanyBase(BaseModel):
     gst_number: str | None = None
     tan_number: str | None = None
     pan_number: str | None = None
+    pan_holder_type: str | None = None  # derived from PAN
     reg_address_line1: str | None = None
     reg_address_line2: str | None = None
     reg_address_line3: str | None = None
@@ -142,6 +156,8 @@ class CompanyBase(BaseModel):
     cdsl_shares: int | None = None
     physical_shares: int | None = None
 
+    # Format validators run on BOTH read and write — the DB is cleaned so every
+    # stored value is valid or null (see the startup cleanup migration).
     @field_validator("isin_code")
     @classmethod
     def validate_isin(cls, v: str | None) -> str | None:
@@ -151,14 +167,6 @@ class CompanyBase(BaseModel):
     @classmethod
     def validate_arn(cls, v: str | None) -> str | None:
         return _normalize_arn(v)
-
-
-class CompanyCreate(CompanyBase):
-    # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
-    @field_validator("total_shares", "nsdl_shares", "cdsl_shares")
-    @classmethod
-    def validate_shares(cls, v: int | None) -> int | None:
-        return _non_negative(v)
 
     @field_validator("nsdl_rta_code")
     @classmethod
@@ -170,6 +178,11 @@ class CompanyCreate(CompanyBase):
     def validate_gst(cls, v: str | None) -> str | None:
         return _validate_gst(v)
 
+    @field_validator("pan_number")
+    @classmethod
+    def validate_pan(cls, v: str | None) -> str | None:
+        return _validate_pan(v)
+
     @field_validator("reg_pin_code")
     @classmethod
     def validate_pincode(cls, v: str | None) -> str | None:
@@ -179,6 +192,14 @@ class CompanyCreate(CompanyBase):
     @classmethod
     def validate_state(cls, v: str | None) -> str | None:
         return _validate_state(v)
+
+
+class CompanyCreate(CompanyBase):
+    # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
+    @field_validator("total_shares", "nsdl_shares", "cdsl_shares")
+    @classmethod
+    def validate_shares(cls, v: int | None) -> int | None:
+        return _non_negative(v)
 
     @model_validator(mode="after")
     def require_isin_or_arn(self) -> "CompanyCreate":
@@ -236,6 +257,11 @@ class CompanyUpdate(BaseModel):
     @classmethod
     def validate_gst(cls, v: str | None) -> str | None:
         return _validate_gst(v)
+
+    @field_validator("pan_number")
+    @classmethod
+    def validate_pan(cls, v: str | None) -> str | None:
+        return _validate_pan(v)
 
     @field_validator("reg_pin_code")
     @classmethod

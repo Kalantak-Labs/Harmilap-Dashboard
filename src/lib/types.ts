@@ -26,6 +26,7 @@ export interface Company {
   gst_number: string | null;
   tan_number: string | null;
   pan_number: string | null;
+  pan_holder_type: string | null;
   reg_address_line1: string | null;
   reg_address_line2: string | null;
   reg_address_line3: string | null;

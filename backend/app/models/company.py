@@ -33,6 +33,7 @@ class Company(Base):
     gst_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     tan_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     pan_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    pan_holder_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # derived from PAN 4th char
 
     # Registered address (structured)
     reg_address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)

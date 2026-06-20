@@ -232,6 +232,7 @@ export default function CompanyDetailPage() {
           <Field label="GST Number" value={editing ? inp("gst_number") : company.gst_number} />
           <Field label="TAN Number" value={editing ? inp("tan_number") : company.tan_number} />
           <Field label="PAN Number" value={editing ? inp("pan_number") : company.pan_number} />
+          <Field label="PAN Holder Type" value={company.pan_holder_type ? <span className="badge badge-gray">{company.pan_holder_type}</span> : null} />
         </div>
 
         {/* Section: Registered Address */}

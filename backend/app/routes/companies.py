@@ -17,6 +17,7 @@ from app.schemas.company import (
     CompanyCreate, CompanyUpdate, CompanyOut, CompanyListOut, IngestResult, CompanyStats,
     _validate_isin,
 )
+from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
 from app.services.excel import parse_excel, build_export_excel
 from app.dependencies import get_current_user, require_permission
 
@@ -39,6 +40,19 @@ def _sync_depository_flags(company: Company) -> None:
         company.has_nsdl_shares = True
     if (company.cdsl_rta_code or "").strip():
         company.has_cdsl_shares = True
+
+
+def _derive_company_info(company: Company) -> None:
+    """Fill PAN from GST when missing, derive PAN holder type and the GST state."""
+    gst = (company.gst_number or "").strip().upper()
+    # GST chars 3–12 are the PAN — use it when PAN is not provided.
+    if not (company.pan_number or "").strip() and len(gst) == 15:
+        company.pan_number = gst[2:12]
+    pan = (company.pan_number or "").strip().upper()
+    company.pan_holder_type = PAN_HOLDER_TYPES.get(pan[3]) if len(pan) == 10 else None
+    # GST state code (first 2 digits) → state, only when state is not set manually.
+    if not (company.state or "").strip() and len(gst) >= 2:
+        company.state = GST_STATE_CODES.get(gst[:2])
 
 
 def _apply_search(query, search: str | None):
@@ -219,6 +233,7 @@ async def ingest_excel(
                         setattr(existing, field, value)
                 _recalc_physical(existing)
                 _sync_depository_flags(existing)
+                _derive_company_info(existing)
                 existing.updated_at = datetime.now(timezone.utc)
                 existing.updated_by = current_user.id
                 updated += 1
@@ -230,6 +245,7 @@ async def ingest_excel(
                 )
                 _recalc_physical(company)
                 _sync_depository_flags(company)
+                _derive_company_info(company)
                 db.add(company)
                 created += 1
 
@@ -259,6 +275,7 @@ async def create_company(
     company = Company(**body.model_dump(), created_by=current_user.id, updated_by=current_user.id)
     _recalc_physical(company)
     _sync_depository_flags(company)
+    _derive_company_info(company)
     db.add(company)
     await db.commit()
     await db.refresh(company)
@@ -338,6 +355,7 @@ async def update_company(
         setattr(company, field, value)
     _recalc_physical(company)
     _sync_depository_flags(company)
+    _derive_company_info(company)
 
     if not company.isin_code and not company.arn_number:
         raise HTTPException(

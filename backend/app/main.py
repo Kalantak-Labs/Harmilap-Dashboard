@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate  # ensure models are registered
+from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate, GstStateCode, PanHolderType  # ensure models are registered
+from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
+from app.schemas.company import INDIAN_STATES_UTS
 from app.routes import auth, users, companies, beneficiaries, reports, emails, invoices
 
 
@@ -26,9 +28,64 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS face_value DOUBLE PRECISION"
         ))
 
-        # companies: state column
+        # companies: state + derived PAN holder type columns
         await conn.execute(text(
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS state VARCHAR(100)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS pan_holder_type VARCHAR(50)"
+        ))
+
+        # Seed reference mapping tables (idempotent)
+        gst_vals = ",".join(
+            f"('{k}','{v.replace(chr(39), chr(39) * 2)}')" for k, v in GST_STATE_CODES.items()
+        )
+        await conn.execute(text(
+            f"INSERT INTO gst_state_codes (code, state) VALUES {gst_vals} "
+            "ON CONFLICT (code) DO UPDATE SET state = EXCLUDED.state"
+        ))
+        pan_vals = ",".join(
+            f"('{k}','{v.replace(chr(39), chr(39) * 2)}')" for k, v in PAN_HOLDER_TYPES.items()
+        )
+        await conn.execute(text(
+            f"INSERT INTO pan_holder_types (code, meaning) VALUES {pan_vals} "
+            "ON CONFLICT (code) DO UPDATE SET meaning = EXCLUDED.meaning"
+        ))
+
+        # Clear bad values so the read-side validators never reject stored data
+        await conn.execute(text("UPDATE companies SET gst_number = upper(trim(gst_number)) WHERE gst_number IS NOT NULL"))
+        await conn.execute(text(
+            "UPDATE companies SET gst_number = NULL WHERE gst_number IS NOT NULL "
+            "AND gst_number !~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$'"
+        ))
+        await conn.execute(text("UPDATE companies SET pan_number = upper(trim(pan_number)) WHERE pan_number IS NOT NULL"))
+        await conn.execute(text(
+            "UPDATE companies SET pan_number = NULL WHERE pan_number IS NOT NULL "
+            "AND pan_number !~ '^[A-Z]{5}[0-9]{4}[A-Z]$'"
+        ))
+        await conn.execute(text("UPDATE companies SET reg_pin_code = trim(reg_pin_code) WHERE reg_pin_code IS NOT NULL"))
+        await conn.execute(text(
+            "UPDATE companies SET reg_pin_code = NULL WHERE reg_pin_code IS NOT NULL AND reg_pin_code !~ '^[0-9]{6}$'"
+        ))
+        _states_in = ",".join("'" + s.replace("'", "''") + "'" for s in INDIAN_STATES_UTS)
+        await conn.execute(text(
+            f"UPDATE companies SET state = NULL WHERE state IS NOT NULL AND state <> '' AND state NOT IN ({_states_in})"
+        ))
+
+        # Backfill derived info: PAN from GST, PAN holder type, state from GST
+        await conn.execute(text(
+            "UPDATE companies SET pan_number = substr(gst_number, 3, 10) "
+            "WHERE (pan_number IS NULL OR pan_number = '') AND gst_number IS NOT NULL AND char_length(gst_number) = 15"
+        ))
+        await conn.execute(text(
+            "UPDATE companies SET pan_holder_type = "
+            "(SELECT meaning FROM pan_holder_types p WHERE p.code = substr(pan_number, 4, 1)) "
+            "WHERE pan_number IS NOT NULL AND char_length(pan_number) = 10"
+        ))
+        await conn.execute(text(
+            "UPDATE companies SET state = "
+            "(SELECT state FROM gst_state_codes g WHERE g.code = substr(gst_number, 1, 2)) "
+            "WHERE (state IS NULL OR state = '') AND gst_number IS NOT NULL AND char_length(gst_number) = 15"
         ))
 
         # companies: a filled NSDL/CDSL RTA code marks presence in that depository
