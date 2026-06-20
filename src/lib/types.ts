@@ -214,6 +214,7 @@ export interface Invoice {
   sgst_rate: number;
   invoice_no: string | null;
   invoice_date: string | null;
+  default_invoice_no: string | null;
   fiscal_year: string | null;
   payment_status: boolean;
   payment_date: string | null;
@@ -228,9 +229,26 @@ export interface InvoiceUpdate {
   igst_rate?: number;
   cgst_rate?: number;
   sgst_rate?: number;
+  invoice_no?: string | null;
+  invoice_date?: string | null;
   payment_status?: boolean;
   payment_date?: string | null;
   amount_paid?: number | null;
+}
+
+export interface InvoiceNoCheck {
+  available: boolean;
+  default_invoice_no: string | null;
+}
+
+export interface InvoiceArchive {
+  id: string;
+  invoice_no: string;
+  invoice_date: string | null;
+  fiscal_year: string;
+  filename: string;
+  grand_total: number | null;
+  generated_at: string;
 }
 
 export interface ZipIngestResult {

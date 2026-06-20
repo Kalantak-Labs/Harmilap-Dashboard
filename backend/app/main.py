@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, EmailSettings, EmailTemplate  # ensure models are registered
+from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate  # ensure models are registered
 from app.routes import auth, users, companies, beneficiaries, reports, emails, invoices
 
 
@@ -34,6 +34,17 @@ async def lifespan(app: FastAPI):
         # invoices: track last PDF generation time
         await conn.execute(text(
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_generated_at TIMESTAMPTZ"
+        ))
+
+        # invoices: per-party invoice date override
+        await conn.execute(text(
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_date DATE"
+        ))
+
+        # invoices: unique invoice numbers (when set)
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_invoices_invoice_no "
+            "ON invoices (invoice_no) WHERE invoice_no IS NOT NULL"
         ))
 
         # invoices: drop the financial-year prefix from existing invoice numbers

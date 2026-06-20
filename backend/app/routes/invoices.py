@@ -1,4 +1,5 @@
 import io
+import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -11,10 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import require_permission
 from app.models import Company, Invoice
+from app.models.invoice_pdf_archive import InvoicePdfArchive
 from app.models.invoice_config import InvoiceConfig, DEFAULT_LINE_ITEMS
 from app.models.user import User
 from app.schemas.invoice import (
-    InvoiceOut, InvoiceUpdate, PartyListOut, Particular,
+    InvoiceOut, InvoiceUpdate, InvoiceNoCheck, InvoiceArchiveOut, PartyListOut, Particular,
 )
 from app.services.invoice_excel import build_invoice_export, parse_invoice_excel
 from app.services.pdf_generator import current_fy, generate_invoice_pdf, zip_pdfs
@@ -40,6 +42,75 @@ def _cfg_invoice_date(cfg: InvoiceConfig) -> date:
 
 def _cfg_fy(cfg: InvoiceConfig) -> str:
     return current_fy(_cfg_invoice_date(cfg))
+
+
+def _resolve_invoice_date(inv: Optional[Invoice], cfg: InvoiceConfig) -> date:
+    if inv and inv.invoice_date:
+        return inv.invoice_date
+    return _cfg_invoice_date(cfg)
+
+
+async def _invoice_no_taken(
+    invoice_no: str, db: AsyncSession, exclude_id=None,
+) -> bool:
+    no = invoice_no.strip()
+    if not no:
+        return False
+    q = select(Invoice).where(Invoice.invoice_no == no)
+    if exclude_id:
+        q = q.where(Invoice.id != exclude_id)
+    return (await db.execute(q)).scalar_one_or_none() is not None
+
+
+async def _default_invoice_no(
+    party: dict, inv: Optional[Invoice], fy: str, db: AsyncSession,
+) -> str:
+    """The auto-assigned number for this party (existing saved no, or next serial)."""
+    if inv and inv.invoice_no:
+        return inv.invoice_no
+    return await _next_invoice_no(party, fy, db)
+
+
+def _invoice_matches_party(inv: Invoice, party: dict) -> bool:
+    if party.get("nsdl_rta_code") and inv.nsdl_rta_code == party["nsdl_rta_code"]:
+        return True
+    if party.get("cdsl_rta_code") and inv.cdsl_rta_code == party["cdsl_rta_code"]:
+        return True
+    return False
+
+
+async def _party_invoice_ids(party: dict, db: AsyncSession) -> list[uuid.UUID]:
+    conds = []
+    if party.get("nsdl_rta_code"):
+        conds.append(Invoice.nsdl_rta_code == party["nsdl_rta_code"])
+    if party.get("cdsl_rta_code"):
+        conds.append(Invoice.cdsl_rta_code == party["cdsl_rta_code"])
+    if not conds:
+        return []
+    rows = (await db.execute(select(Invoice.id).where(or_(*conds)))).scalars().all()
+    return list(rows)
+
+
+async def _save_archive(
+    db: AsyncSession,
+    inv: Invoice,
+    party: dict,
+    cfg: InvoiceConfig,
+    pdf_bytes: bytes,
+    filename: str,
+) -> InvoicePdfArchive:
+    out = _build_out(party, inv, cfg)
+    archive = InvoicePdfArchive(
+        invoice_id=inv.id,
+        invoice_no=inv.invoice_no or out.invoice_no or "",
+        invoice_date=_resolve_invoice_date(inv, cfg),
+        fiscal_year=inv.fiscal_year,
+        filename=filename,
+        grand_total=out.grand_total,
+        pdf_data=pdf_bytes,
+    )
+    db.add(archive)
+    return archive
 
 
 class LineItem(BaseModel):
@@ -238,7 +309,12 @@ async def _next_invoice_no(party: dict, fy: str, db: AsyncSession) -> str:
     return f"{_party_code(party)}/{seq}"
 
 
-def _build_out(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> InvoiceOut:
+def _build_out(
+    party: dict,
+    inv: Optional[Invoice],
+    cfg: InvoiceConfig,
+    default_invoice_no: str | None = None,
+) -> InvoiceOut:
     units = party.get("isin_units", 1)
     if inv:
         particulars = inv.particulars or []
@@ -266,7 +342,10 @@ def _build_out(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> Invoi
         isin_count=units,
         particulars=[Particular(**p) for p in particulars],
         gst_type=gst_type, igst_rate=igst, cgst_rate=cgst, sgst_rate=sgst,
-        invoice_no=invoice_no, invoice_date=_cfg_invoice_date(cfg), fiscal_year=fy,
+        invoice_no=invoice_no,
+        invoice_date=_resolve_invoice_date(inv, cfg),
+        default_invoice_no=default_invoice_no,
+        fiscal_year=fy,
         payment_status=pay_status, payment_date=pay_date, amount_paid=amt_paid,
         last_generated_at=last_gen,
         grand_total=_grand_total(particulars, gst_type, igst, cgst, sgst, units),
@@ -310,7 +389,8 @@ def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
         "bank_accounts": getattr(cfg, "bank_accounts", None) or [],
     }
     inv_no = out.invoice_no or f"{_party_code(party)}/1"
-    return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, _cfg_invoice_date(cfg))
+    inv_date = _resolve_invoice_date(inv, cfg)
+    return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, inv_date)
 
 
 async def _ensure_record(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> Invoice:
@@ -334,14 +414,16 @@ async def _ensure_record(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> I
 
 
 async def _generate_and_stamp(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> tuple[str, bytes]:
-    """Persist the invoice (number + last_generated_at) and render the PDF."""
+    """Persist the invoice (number + last_generated_at), archive PDF, and return it."""
     inv = await _ensure_record(party, cfg, db)
     inv.last_generated_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(inv)
     pdf = _pdf_for(party, inv, cfg)
     label = party.get("company_name") or party["party_key"]
-    return f"Invoice_{label}.pdf", pdf
+    filename = f"Invoice_{label}.pdf"
+    await _save_archive(db, inv, party, cfg, pdf, filename)
+    await db.commit()
+    await db.refresh(inv)
+    return filename, pdf
 
 
 def _stream_pdf(data: bytes, filename: str) -> StreamingResponse:
@@ -410,6 +492,26 @@ async def list_parties(
     return out
 
 
+@router.get("/check-invoice-no", response_model=InvoiceNoCheck)
+async def check_invoice_no(
+    invoice_no: str = Query(..., min_length=1),
+    party_key: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("viewer")),
+):
+    cfg = await _get_config(db)
+    fy = _cfg_fy(cfg)
+    exclude_id = None
+    default_no: str | None = None
+    if party_key:
+        party = await _party_for_key(party_key, db)
+        inv = await _find_invoice(party, fy, db)
+        exclude_id = inv.id if inv else None
+        default_no = await _default_invoice_no(party, inv, fy, db)
+    taken = await _invoice_no_taken(invoice_no, db, exclude_id)
+    return InvoiceNoCheck(available=not taken, default_invoice_no=default_no)
+
+
 @router.get("/parties/{party_key}", response_model=InvoiceOut)
 async def get_invoice(
     party_key: str,
@@ -418,8 +520,10 @@ async def get_invoice(
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
-    inv = await _find_invoice(party, _cfg_fy(cfg), db)
-    return _build_out(party, inv, cfg)
+    fy = _cfg_fy(cfg)
+    inv = await _find_invoice(party, fy, db)
+    default_no = await _default_invoice_no(party, inv, fy, db)
+    return _build_out(party, inv, cfg, default_no)
 
 
 @router.put("/parties/{party_key}", response_model=InvoiceOut)
@@ -431,7 +535,23 @@ async def upsert_invoice(
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
+    fy = _cfg_fy(cfg)
     inv = await _ensure_record(party, cfg, db)
+
+    if body.invoice_no is not None:
+        no = body.invoice_no.strip()
+        if not no:
+            raise HTTPException(400, "Invoice number cannot be empty")
+        if await _invoice_no_taken(no, db, exclude_id=inv.id):
+            default = await _default_invoice_no(party, inv, fy, db)
+            raise HTTPException(
+                409,
+                detail=f"Invoice number '{no}' is already in use. Use the default: {default}",
+            )
+        inv.invoice_no = no
+
+    if body.invoice_date is not None:
+        inv.invoice_date = body.invoice_date
 
     if body.particulars is not None:
         inv.particulars = [p.model_dump() for p in body.particulars]
@@ -452,10 +572,48 @@ async def upsert_invoice(
 
     await db.commit()
     await db.refresh(inv)
-    return _build_out(party, inv, cfg)
+    default_no = await _default_invoice_no(party, inv, fy, db)
+    return _build_out(party, inv, cfg, default_no)
 
 
 # ── PDF generation ────────────────────────────────────────────────────────────
+
+@router.get("/parties/{party_key}/archives", response_model=list[InvoiceArchiveOut])
+async def list_invoice_archives(
+    party_key: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("viewer")),
+):
+    party = await _party_for_key(party_key, db)
+    invoice_ids = await _party_invoice_ids(party, db)
+    if not invoice_ids:
+        return []
+    result = await db.execute(
+        select(InvoicePdfArchive)
+        .where(InvoicePdfArchive.invoice_id.in_(invoice_ids))
+        .order_by(InvoicePdfArchive.generated_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.get("/parties/{party_key}/archives/{archive_id}")
+async def download_invoice_archive(
+    party_key: str,
+    archive_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("viewer")),
+):
+    party = await _party_for_key(party_key, db)
+    archive = (await db.execute(
+        select(InvoicePdfArchive).where(InvoicePdfArchive.id == archive_id)
+    )).scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archived invoice not found")
+    inv = (await db.execute(select(Invoice).where(Invoice.id == archive.invoice_id))).scalar_one_or_none()
+    if not inv or not _invoice_matches_party(inv, party):
+        raise HTTPException(404, "Archived invoice not found")
+    return _stream_pdf(archive.pdf_data, archive.filename)
+
 
 @router.post("/parties/{party_key}/pdf")
 async def invoice_pdf(
@@ -567,12 +725,15 @@ async def import_invoices_zip(
             inv.amount_paid = row["amount_paid"]
         inv.last_generated_at = datetime.now(timezone.utc)
 
+        pdf = _pdf_for(party, inv, cfg)
+        label = party.get("company_name") or key
+        filename = f"Invoice_{label}.pdf"
+        await _save_archive(db, inv, party, cfg, pdf, filename)
+
         await db.commit()
         await db.refresh(inv)
 
-        pdf = _pdf_for(party, inv, cfg)
-        label = party.get("company_name") or key
-        entries.append((f"Invoice_{label}.pdf", pdf))
+        entries.append((filename, pdf))
 
     if errors:
         entries.append(("_errors.txt", "\n".join(errors).encode("utf-8")))

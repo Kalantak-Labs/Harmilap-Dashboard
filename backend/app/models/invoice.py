@@ -40,7 +40,8 @@ class Invoice(Base):
     cgst_rate: Mapped[float] = mapped_column(Float, nullable=False, default=9.0)
     sgst_rate: Mapped[float] = mapped_column(Float, nullable=False, default=9.0)
 
-    invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     fiscal_year: Mapped[str] = mapped_column(String(7), nullable=False)
 
     # Payment tracking

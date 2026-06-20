@@ -178,6 +178,28 @@ export const api = {
       request<import("./types").Invoice>(`/invoices/parties/${encodeURIComponent(partyKey)}`),
     updateInvoice: (partyKey: string, body: import("./types").InvoiceUpdate) =>
       request<import("./types").Invoice>(`/invoices/parties/${encodeURIComponent(partyKey)}`, { method: "PUT", body: JSON.stringify(body) }),
+    checkInvoiceNo: (invoiceNo: string, partyKey?: string) => {
+      const params = new URLSearchParams({ invoice_no: invoiceNo });
+      if (partyKey) params.set("party_key", partyKey);
+      return request<import("./types").InvoiceNoCheck>(`/invoices/check-invoice-no?${params}`);
+    },
+    listArchives: (partyKey: string) =>
+      request<import("./types").InvoiceArchive[]>(
+        `/invoices/parties/${encodeURIComponent(partyKey)}/archives`,
+      ),
+    downloadArchive: async (partyKey: string, archiveId: string, filename: string) => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(
+        `${BASE}/invoices/parties/${encodeURIComponent(partyKey)}/archives/${archiveId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    },
 
     pdfUrl:  (partyKey: string) => `${BASE}/invoices/parties/${encodeURIComponent(partyKey)}/pdf`,
     bulkUrl: ()                 => `${BASE}/invoices/bulk-pdf`,

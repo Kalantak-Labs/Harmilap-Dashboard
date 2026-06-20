@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Download, Upload, Search, X, RefreshCw, Receipt, Settings, Plus, Trash2,
-  Check, FileDown,
+  Check, FileDown, History,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
-import type { PartyListItem, Invoice, Particular } from "@/lib/types";
+import type { PartyListItem, Invoice, Particular, InvoiceArchive } from "@/lib/types";
 
 function computeTotal(
   particulars: Particular[], gstType: string,
@@ -41,7 +41,16 @@ export default function InvoicesPage() {
 
   // Editor modal
   const [editing, setEditing] = useState<Invoice | null>(null);
+  const [defaultInvoiceNo, setDefaultInvoiceNo] = useState<string | null>(null);
+  const [invoiceNoError, setInvoiceNoError] = useState<string | null>(null);
+  const [checkingInvoiceNo, setCheckingInvoiceNo] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // History modal
+  const [historyParty, setHistoryParty] = useState<PartyListItem | null>(null);
+  const [archives, setArchives] = useState<InvoiceArchive[]>([]);
+  const [loadingArchives, setLoadingArchives] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -62,12 +71,64 @@ export default function InvoicesPage() {
   const openEditor = async (partyKey: string) => {
     setBusy(`edit:${partyKey}`);
     try {
-      setEditing(await api.invoices.getInvoice(partyKey));
+      const inv = await api.invoices.getInvoice(partyKey);
+      const defaultNo = inv.default_invoice_no ?? inv.invoice_no ?? null;
+      setDefaultInvoiceNo(defaultNo);
+      setInvoiceNoError(null);
+      setEditing({
+        ...inv,
+        invoice_no: inv.invoice_no ?? defaultNo ?? "",
+        invoice_date: inv.invoice_date ?? new Date().toISOString().slice(0, 10),
+      });
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Failed to load invoice");
     } finally {
       setBusy(null);
     }
+  };
+
+  const validateInvoiceNo = useCallback(async (no: string, partyKey: string, defaultNo: string | null) => {
+    const trimmed = no.trim();
+    if (!trimmed) {
+      setInvoiceNoError("Invoice number is required");
+      return;
+    }
+    if (defaultNo && trimmed === defaultNo) {
+      setInvoiceNoError(null);
+      return;
+    }
+    setCheckingInvoiceNo(true);
+    try {
+      const result = await api.invoices.checkInvoiceNo(trimmed, partyKey);
+      if (!result.available) {
+        setInvoiceNoError(
+          `Invoice number "${trimmed}" is already in use.${result.default_invoice_no ? ` Use the default: ${result.default_invoice_no}` : ""}`,
+        );
+      } else {
+        setInvoiceNoError(null);
+      }
+    } catch {
+      setInvoiceNoError(null);
+    } finally {
+      setCheckingInvoiceNo(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!editing) return;
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    checkTimerRef.current = setTimeout(() => {
+      validateInvoiceNo(editing.invoice_no ?? "", editing.party_key, defaultInvoiceNo);
+    }, 400);
+    return () => {
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    };
+  }, [editing?.invoice_no, editing?.party_key, defaultInvoiceNo, validateInvoiceNo]);
+
+  const useDefaultInvoiceNo = () => {
+    if (!defaultInvoiceNo || !editing) return;
+    setEditField("invoice_no", defaultInvoiceNo);
+    setInvoiceNoError(null);
   };
 
   const downloadPdf = async (party: PartyListItem) => {
@@ -83,6 +144,37 @@ export default function InvoicesPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const openHistory = async (party: PartyListItem) => {
+    setHistoryParty(party);
+    setArchives([]);
+    setLoadingArchives(true);
+    try {
+      setArchives(await api.invoices.listArchives(party.party_key));
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to load invoice history");
+      setHistoryParty(null);
+    } finally {
+      setLoadingArchives(false);
+    }
+  };
+
+  const downloadArchive = async (archive: InvoiceArchive) => {
+    if (!historyParty) return;
+    setBusy(`archive:${archive.id}`);
+    try {
+      await api.invoices.downloadArchive(historyParty.party_key, archive.id, archive.filename);
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const closeHistory = () => {
+    setHistoryParty(null);
+    setArchives([]);
   };
 
   const bulkZip = async () => {
@@ -148,6 +240,15 @@ export default function InvoicesPage() {
 
   const saveEdit = async () => {
     if (!editing) return;
+    if (invoiceNoError) {
+      push("error", invoiceNoError);
+      return;
+    }
+    const trimmedNo = (editing.invoice_no ?? "").trim();
+    if (!trimmedNo) {
+      push("error", "Invoice number is required");
+      return;
+    }
     setSavingEdit(true);
     try {
       const updated = await api.invoices.updateInvoice(editing.party_key, {
@@ -156,15 +257,23 @@ export default function InvoicesPage() {
         igst_rate: editing.igst_rate,
         cgst_rate: editing.cgst_rate,
         sgst_rate: editing.sgst_rate,
+        invoice_no: trimmedNo,
+        invoice_date: editing.invoice_date || null,
         payment_status: editing.payment_status,
         payment_date: editing.payment_date,
         amount_paid: editing.amount_paid,
       });
       setEditing(null);
+      setDefaultInvoiceNo(null);
+      setInvoiceNoError(null);
       push("success", `Invoice saved${updated.invoice_no ? ` (${updated.invoice_no})` : ""}`);
       load();
     } catch (e: unknown) {
-      push("error", e instanceof Error ? e.message : "Save failed");
+      const msg = e instanceof Error ? e.message : "Save failed";
+      push("error", msg);
+      if (msg.includes("already in use") && defaultInvoiceNo) {
+        setInvoiceNoError(msg);
+      }
     } finally {
       setSavingEdit(false);
     }
@@ -177,10 +286,81 @@ export default function InvoicesPage() {
 
   return (
     <div>
+      {/* ── History modal ── */}
+      {historyParty && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} onClick={closeHistory} />
+          <div className="card" style={{ position: "relative", zIndex: 1, width: 720, maxWidth: "94vw", maxHeight: "80vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "18px 20px 12px", borderBottom: "1px solid var(--border)" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>Generated Invoices</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  {historyParty.company_name || historyParty.party_key}
+                  {historyParty.invoice_no && <> · {historyParty.invoice_no}</>}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={closeHistory}><X size={16} /></button>
+            </div>
+            <div style={{ overflowY: "auto", padding: "0 20px 16px" }}>
+              {loadingArchives ? (
+                <div className="spinner-center" style={{ padding: 32 }}><span className="spinner" /></div>
+              ) : archives.length === 0 ? (
+                <div className="empty-state" style={{ padding: "32px 0" }}>
+                  <History size={28} />
+                  <div>No archived invoices yet</div>
+                  <div style={{ fontSize: 12 }}>Use the download button to generate — copies are saved here automatically</div>
+                </div>
+              ) : (
+                <table style={{ width: "100%", marginTop: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>Invoice No</th>
+                      <th>Invoice Date</th>
+                      <th>Generated</th>
+                      <th style={{ textAlign: "right" }}>Total</th>
+                      <th style={{ textAlign: "center", width: 80 }}>Download</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archives.map((a) => (
+                      <tr key={a.id}>
+                        <td><code style={{ fontSize: 12 }}>{a.invoice_no}</code></td>
+                        <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                          {a.invoice_date
+                            ? new Date(a.invoice_date).toLocaleDateString("en-IN")
+                            : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                        </td>
+                        <td style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                          {fmtDate(a.generated_at)}
+                        </td>
+                        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {a.grand_total != null ? inr(a.grand_total) : "—"}
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <button
+                            className="btn btn-ghost btn-sm btn-icon"
+                            title="Download archived PDF"
+                            onClick={() => downloadArchive(a)}
+                            disabled={!!busy}
+                            style={{ color: "var(--accent)" }}
+                          >
+                            {busy === `archive:${a.id}` ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Download size={14} />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Editor modal ── */}
       {editing && (
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} onClick={() => setEditing(null)} />
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} onClick={() => { setEditing(null); setDefaultInvoiceNo(null); setInvoiceNoError(null); }} />
           <div className="card" style={{ position: "relative", zIndex: 1, width: 820, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", padding: "22px 24px 18px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
               <div>
@@ -191,7 +371,7 @@ export default function InvoicesPage() {
                   · {editing.isins.length} ISIN(s) · {editing.invoice_no || "no invoice no yet"}
                 </div>
               </div>
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditing(null)}><X size={16} /></button>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setEditing(null); setDefaultInvoiceNo(null); setInvoiceNoError(null); }}><X size={16} /></button>
             </div>
 
             {editing.isins.length > 0 && (
@@ -199,6 +379,64 @@ export default function InvoicesPage() {
                 <b>ISINs:</b> {editing.isins.join(", ")}
               </div>
             )}
+
+            {/* Invoice date + number */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14, padding: "12px 14px", background: "var(--bg)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-muted)" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Invoice Date</label>
+                <input
+                  className="input input-sm"
+                  type="date"
+                  value={editing.invoice_date?.slice(0, 10) ?? ""}
+                  onChange={(e) => setEditField("invoice_date", e.target.value || null)}
+                />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+                  Overrides the date from the particulars template for this party only
+                </div>
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Invoice Number</label>
+                <input
+                  className="input input-sm"
+                  value={editing.invoice_no ?? ""}
+                  onChange={(e) => setEditField("invoice_no", e.target.value)}
+                  style={invoiceNoError ? { borderColor: "var(--danger)" } : undefined}
+                />
+                {defaultInvoiceNo && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
+                    Default: <code style={{ fontSize: 11 }}>{defaultInvoiceNo}</code>
+                    {editing.invoice_no !== defaultInvoiceNo && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginLeft: 8, padding: "0 6px", height: 22, fontSize: 11 }}
+                        onClick={useDefaultInvoiceNo}
+                      >
+                        Use default
+                      </button>
+                    )}
+                  </div>
+                )}
+                {checkingInvoiceNo && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>Checking availability…</div>
+                )}
+                {invoiceNoError && !checkingInvoiceNo && (
+                  <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 3, display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+                    <span>{invoiceNoError}</span>
+                    {defaultInvoiceNo && editing.invoice_no !== defaultInvoiceNo && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: "0 6px", height: 22, fontSize: 11, color: "var(--danger)" }}
+                        onClick={useDefaultInvoiceNo}
+                      >
+                        Use default
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Particulars */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
@@ -299,8 +537,8 @@ export default function InvoicesPage() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
               <div style={{ fontSize: 14 }}>Grand Total: <b style={{ fontSize: 17 }}>{inr(editTotal)}</b></div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => setEditing(null)}>Cancel</button>
-                <button className="btn btn-primary btn-sm" onClick={saveEdit} disabled={savingEdit || !can("editor")}>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setEditing(null); setDefaultInvoiceNo(null); setInvoiceNoError(null); }}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={saveEdit} disabled={savingEdit || !!invoiceNoError || checkingInvoiceNo || !can("editor")}>
                   {savingEdit ? <span className="spinner" /> : <Check size={14} />} Save Invoice
                 </button>
               </div>
@@ -408,6 +646,10 @@ export default function InvoicesPage() {
                     <button className="btn btn-ghost btn-sm btn-icon" title="Download PDF"
                       onClick={() => downloadPdf(p)} disabled={!!busy} style={{ color: "var(--accent)" }}>
                       {busy === `pdf:${p.party_key}` ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Download size={14} />}
+                    </button>
+                    <button className="btn btn-ghost btn-sm btn-icon" title="View generated invoices"
+                      onClick={() => openHistory(p)} disabled={!!busy}>
+                      {busy === `history:${p.party_key}` ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <History size={14} />}
                     </button>
                   </td>
                 </tr>

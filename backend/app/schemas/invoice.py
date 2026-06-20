@@ -50,6 +50,7 @@ class InvoiceOut(BaseModel):
     sgst_rate: float = 9.0
     invoice_no: str | None = None
     invoice_date: date | None = None
+    default_invoice_no: str | None = None
     fiscal_year: str | None = None
     payment_status: bool = False
     payment_date: date | None = None
@@ -64,9 +65,28 @@ class InvoiceUpdate(BaseModel):
     igst_rate: float | None = None
     cgst_rate: float | None = None
     sgst_rate: float | None = None
+    invoice_no: str | None = None
+    invoice_date: date | None = None
     payment_status: bool | None = None
     payment_date: date | None = None
     amount_paid: float | None = None
+
+
+class InvoiceNoCheck(BaseModel):
+    available: bool
+    default_invoice_no: str | None = None
+
+
+class InvoiceArchiveOut(BaseModel):
+    id: uuid.UUID
+    invoice_no: str
+    invoice_date: date | None = None
+    fiscal_year: str
+    filename: str
+    grand_total: float | None = None
+    generated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class InvoiceZipResult(BaseModel):
