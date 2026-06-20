@@ -21,6 +21,48 @@ from app.dependencies import require_permission
 
 router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
 
+NSDL = "NSDL"
+CDSL = "CDSL"
+
+
+async def _delete_beneficiary_keys(
+    db: AsyncSession,
+    isin: str,
+    dp_id: str,
+    client_id: str,
+) -> None:
+    """Remove any existing row for this key (handles NSDL ↔ CDSL moves)."""
+    await db.execute(
+        delete(Beneficiary).where(
+            Beneficiary.isin_code == isin,
+            Beneficiary.dp_id == dp_id,
+            Beneficiary.client_id == client_id,
+        )
+    )
+
+
+async def _overwrite_all_beneficiaries(db: AsyncSession, isin: str) -> None:
+    """Drop all beneficiaries for this ISIN across both depositories."""
+    await db.execute(delete(Beneficiary).where(Beneficiary.isin_code == isin))
+
+
+async def _overwrite_depository_beneficiaries(
+    db: AsyncSession,
+    isin: str,
+    depository: str,
+) -> None:
+    """Drop all beneficiaries for this ISIN at the given depository."""
+    await db.execute(
+        delete(Beneficiary).where(
+            Beneficiary.isin_code == isin,
+            Beneficiary.depository == depository,
+        )
+    )
+
+
+async def _overwrite_nsdl_lockins(db: AsyncSession, isin: str) -> None:
+    await db.execute(delete(BenposLockin).where(BenposLockin.isin_code == isin))
+
 
 def _search_filter(query, search: str | None):
     if not search:
@@ -153,7 +195,6 @@ async def ingest_zip(
                 continue
 
             isin = header["isin_code"]
-            file_record_date = header["record_date"]
 
             # Reject files whose ISIN has no matching company; fetch Company for later update
             company_result = await db.execute(
@@ -167,48 +208,21 @@ async def ingest_zip(
                 files_skipped += 1
                 continue
 
-            # Process detail (02) records
+            # Overwrite: clear all beneficiaries (both depositories) + lock-ins, then load NSDL
+            await _overwrite_nsdl_lockins(db, isin)
+            await _overwrite_all_beneficiaries(db, isin)
+
             for rec in details:
                 dp_id = rec["dp_id"]
                 client_id = rec["client_id"]
+                if not dp_id or not client_id:
+                    continue
+                rec["depository"] = NSDL
+                db.add(Beneficiary(**rec))
+                total_created += 1
 
-                existing_result = await db.execute(
-                    select(Beneficiary).where(
-                        Beneficiary.isin_code == isin,
-                        Beneficiary.dp_id == dp_id,
-                        Beneficiary.client_id == client_id,
-                    )
-                )
-                existing = existing_result.scalar_one_or_none()
-
-                if existing:
-                    # Only update if new file's record_date is newer
-                    if file_record_date and existing.record_date and file_record_date <= existing.record_date:
-                        total_skipped += 1
-                        continue
-                    for field, value in rec.items():
-                        if value is not None:
-                            setattr(existing, field, value)
-                    existing.updated_at = datetime.now(timezone.utc)
-                    total_updated += 1
-
-                    # Refresh lock-in records for this beneficiary if date is newer
-                    await db.execute(
-                        delete(BenposLockin).where(
-                            BenposLockin.isin_code == isin,
-                            BenposLockin.dp_id == dp_id,
-                            BenposLockin.client_id == client_id,
-                        )
-                    )
-                else:
-                    benef = Beneficiary(**rec)
-                    db.add(benef)
-                    total_created += 1
-
-            # Process lock-in (03) records
             for rec in lockins:
-                li = BenposLockin(**rec)
-                db.add(li)
+                db.add(BenposLockin(**rec))
 
             # Sync NSDL share total from file header into company record
             total_nsdl = header.get("total_nsdl_positions")
@@ -288,8 +302,10 @@ async def ingest_cdsl_zip(
 
     # --- RT95: update cdsl_shares on companies ---
     rt95_rows = parse_rt95(rt95_content)
+    isins_in_rt95: set[str] = set()
     for row in rt95_rows:
         isin = row["isin"]
+        isins_in_rt95.add(isin)
         company_result = await db.execute(select(Company).where(Company.isin_code == isin))
         company_obj = company_result.scalar_one_or_none()
         if not company_obj:
@@ -297,43 +313,26 @@ async def ingest_cdsl_zip(
                 unknown_isins.append(isin)
             continue
         company_obj.cdsl_shares = row["cdsl_shares"]
-        if row["cdsl_shares"] > 0:
-            company_obj.has_cdsl_shares = True
+        company_obj.has_cdsl_shares = row["cdsl_shares"] > 0
         company_obj.updated_at = datetime.now(timezone.utc)
         cdsl_updated += 1
 
-    # --- RT02: upsert individual CDSL beneficiaries ---
+    # --- RT02: overwrite CDSL beneficiaries per ISIN (NSDL rows from prior upload are kept) ---
     records, parse_errors = parse_rt02(rt02_content)
     errors.extend(parse_errors[:20])
+
+    isins_in_rt02 = {rec["isin_code"] for rec in records}
+    for isin in isins_in_rt95 | isins_in_rt02:
+        await _overwrite_depository_beneficiaries(db, isin, CDSL)
 
     for rec in records:
         isin = rec["isin_code"]
         dp_id = rec["dp_id"]
         client_id = rec["client_id"]
-        file_record_date = rec.get("record_date")
-
-        existing_result = await db.execute(
-            select(Beneficiary).where(
-                Beneficiary.isin_code == isin,
-                Beneficiary.dp_id == dp_id,
-                Beneficiary.client_id == client_id,
-                Beneficiary.depository == "CDSL",
-            )
-        )
-        existing = existing_result.scalar_one_or_none()
-
-        if existing:
-            if file_record_date and existing.record_date and file_record_date <= existing.record_date:
-                total_skipped += 1
-                continue
-            for field, value in rec.items():
-                if value is not None:
-                    setattr(existing, field, value)
-            existing.updated_at = datetime.now(timezone.utc)
-            total_updated += 1
-        else:
-            db.add(Beneficiary(**rec))
-            total_created += 1
+        await _delete_beneficiary_keys(db, isin, dp_id, client_id)
+        rec["depository"] = CDSL
+        db.add(Beneficiary(**rec))
+        total_created += 1
 
     await db.commit()
 
