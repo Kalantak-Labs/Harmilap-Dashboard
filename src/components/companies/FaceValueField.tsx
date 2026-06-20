@@ -5,6 +5,7 @@ import {
   FACE_VALUE_OTHERS,
   FACE_VALUE_PRESETS,
   faceValueToFormState,
+  isPresetFaceValue,
   resolveFaceValue,
   type FaceValueMode,
 } from "@/lib/faceValue";
@@ -57,7 +58,10 @@ export default function FaceValueField({ value, onChange, inputClassName = "inpu
             applyMode(FACE_VALUE_OTHERS);
             return;
           }
-          applyMode(Number(v) as FaceValueMode);
+          const preset = Number(v);
+          if (isPresetFaceValue(preset)) {
+            applyMode(preset);
+          }
         }}
       >
         <option value="">Select face value…</option>

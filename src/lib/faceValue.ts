@@ -2,9 +2,11 @@ export const FACE_VALUE_PRESETS = [1, 2, 5, 10, 100, 1000, 10000] as const;
 
 export const FACE_VALUE_OTHERS = "others";
 
-export type FaceValueMode = (typeof FACE_VALUE_PRESETS)[number] | typeof FACE_VALUE_OTHERS | "";
+export type FaceValuePreset = (typeof FACE_VALUE_PRESETS)[number];
 
-export function isPresetFaceValue(value: number): boolean {
+export type FaceValueMode = FaceValuePreset | typeof FACE_VALUE_OTHERS | "";
+
+export function isPresetFaceValue(value: number): value is FaceValuePreset {
   return (FACE_VALUE_PRESETS as readonly number[]).includes(value);
 }
 
