@@ -1,0 +1,556 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Search, Settings, LayoutList, X, Plus, Trash2, Check, Download, Receipt,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/components/ui/Toast";
+import type {
+  PartyBillingItem, PartyBillingSettings, PartyBillingSummary,
+  Particular, BillingInvoiceRecord,
+} from "@/lib/types";
+
+const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+const fmtDate = (s: string | null) =>
+  s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+function ParticularsEditor({
+  particulars, isinCount, onChange,
+}: {
+  particulars: Particular[];
+  isinCount: number;
+  onChange: (p: Particular[]) => void;
+}) {
+  const patch = (id: number, p: Partial<Particular>) =>
+    onChange(particulars.map((it) => (it.id === id ? { ...it, ...p } : it)));
+  const remove = (id: number) => onChange(particulars.filter((p) => p.id !== id));
+  const add = (nonTax = false) => {
+    const newId = Math.max(0, ...particulars.map((p) => p.id)) + 1;
+    onChange([...particulars, {
+      id: newId, description: "", sac_code: nonTax ? "On Actuals" : "997159",
+      amount: 0, is_red: false, non_taxable: nonTax, enabled: true,
+    }]);
+  };
+
+  const renderSection = (title: string, items: Particular[], nonTax: boolean) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontWeight: 600, fontSize: 13 }}>{title}</div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => add(nonTax)}>
+          <Plus size={12} /> Add
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No items</div>
+      ) : items.map((p) => (
+        <div key={p.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr 100px 90px 32px", gap: 8, marginBottom: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={p.enabled} onChange={(e) => patch(p.id, { enabled: e.target.checked })} />
+          <input className="input input-sm" value={p.description} placeholder="Description"
+            onChange={(e) => patch(p.id, { description: e.target.value })} />
+          <input className="input input-sm" type="number" min="0" value={p.amount || ""} placeholder="Amount"
+            onChange={(e) => patch(p.id, { amount: Number(e.target.value) || 0 })} />
+          <input className="input input-sm" value={p.sac_code} placeholder="SAC"
+            onChange={(e) => patch(p.id, { sac_code: e.target.value })} />
+          <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => remove(p.id)}><Trash2 size={12} /></button>
+        </div>
+      ))}
+      {!nonTax && isinCount > 1 && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+          Taxable amounts are per ISIN (× {isinCount} units)
+        </div>
+      )}
+    </div>
+  );
+
+  const taxable = particulars.filter((p) => !p.non_taxable);
+  const nonTaxable = particulars.filter((p) => p.non_taxable);
+  return (
+    <>
+      {renderSection("Taxable (A)", taxable, false)}
+      {renderSection("Non-Taxable (B)", nonTaxable, true)}
+    </>
+  );
+}
+
+export default function BillingsPage() {
+  const { can } = useAuth();
+  const { push } = useToast();
+  const router = useRouter();
+  const [parties, setParties] = useState<PartyBillingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const [settingsParty, setSettingsParty] = useState<PartyBillingItem | null>(null);
+  const [settings, setSettings] = useState<PartyBillingSettings | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const [summaryParty, setSummaryParty] = useState<PartyBillingItem | null>(null);
+  const [summary, setSummary] = useState<PartyBillingSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+
+  const [invoiceNo, setInvoiceNo] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceNoError, setInvoiceNoError] = useState<string | null>(null);
+  const [defaultInvoiceNo, setDefaultInvoiceNo] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [payAmount, setPayAmount] = useState("");
+  const [payBank, setPayBank] = useState<"HDFC" | "IDFC">("HDFC");
+  const [payRef, setPayRef] = useState("");
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [recordingPay, setRecordingPay] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      setParties(await api.billings.listParties(search || undefined));
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to load billings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const t = setTimeout(load, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const openSettings = async (party: PartyBillingItem) => {
+    setBusy(`settings:${party.party_key}`);
+    try {
+      setSettingsParty(party);
+      setSettings(await api.billings.getSettings(party.party_key));
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to load settings");
+      setSettingsParty(null);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!settings || !settingsParty) return;
+    setSavingSettings(true);
+    try {
+      const updated = await api.billings.updateSettings(settingsParty.party_key, {
+        particulars: settings.particulars,
+      });
+      setSettings(updated);
+      push("success", "Billing settings saved");
+      load();
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const refreshSummary = useCallback(async (partyKey: string) => {
+    const data = await api.billings.getSummary(partyKey);
+    setSummary(data);
+    return data;
+  }, []);
+
+  const openSummary = async (party: PartyBillingItem) => {
+    setSummaryParty(party);
+    setSummary(null);
+    setLoadingSummary(true);
+    setInvoiceNo("");
+    setInvoiceNoError(null);
+    setDefaultInvoiceNo(null);
+    setPayAmount("");
+    setPayRef("");
+    try {
+      const data = await refreshSummary(party.party_key);
+      const defaultNo = await api.billings.checkInvoiceNo("", party.party_key, invoiceDate);
+      setDefaultInvoiceNo(defaultNo.default_invoice_no);
+      setInvoiceNo(defaultNo.default_invoice_no || "");
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to load summary");
+      setSummaryParty(null);
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
+
+  const validateInvoiceNo = useCallback(async (no: string, partyKey: string, date: string) => {
+    const trimmed = no.trim();
+    if (!trimmed) { setInvoiceNoError("Invoice number is required"); return; }
+    try {
+      const result = await api.billings.checkInvoiceNo(trimmed, partyKey, date);
+      if (!result.available) {
+        setInvoiceNoError(`Invoice number "${trimmed}" is already in use.${result.default_invoice_no ? ` Suggested: ${result.default_invoice_no}` : ""}`);
+      } else {
+        setInvoiceNoError(null);
+      }
+      if (result.default_invoice_no) setDefaultInvoiceNo(result.default_invoice_no);
+    } catch {
+      setInvoiceNoError(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!summaryParty || loadingSummary) return;
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+    checkTimer.current = setTimeout(() => {
+      validateInvoiceNo(invoiceNo, summaryParty.party_key, invoiceDate);
+    }, 400);
+    return () => { if (checkTimer.current) clearTimeout(checkTimer.current); };
+  }, [invoiceNo, invoiceDate, summaryParty, loadingSummary, validateInvoiceNo]);
+
+  useEffect(() => {
+    if (!summaryParty || loadingSummary) return;
+    api.billings.checkInvoiceNo("", summaryParty.party_key, invoiceDate)
+      .then((r) => {
+        setDefaultInvoiceNo(r.default_invoice_no);
+        if (!invoiceNo.trim() && r.default_invoice_no) setInvoiceNo(r.default_invoice_no);
+      })
+      .catch(() => {});
+  }, [invoiceDate, summaryParty?.party_key, loadingSummary]);
+
+  const generateInvoice = async () => {
+    if (!summaryParty || invoiceNoError) return;
+    const trimmed = invoiceNo.trim();
+    if (!trimmed) { push("error", "Invoice number is required"); return; }
+    setGenerating(true);
+    try {
+      await api.billings.generateInvoice(summaryParty.party_key, {
+        invoice_no: trimmed,
+        invoice_date: invoiceDate,
+      });
+      push("success", `Invoice ${trimmed} generated`);
+      const data = await refreshSummary(summaryParty.party_key);
+      const next = await api.billings.checkInvoiceNo("", summaryParty.party_key, invoiceDate);
+      setDefaultInvoiceNo(next.default_invoice_no);
+      setInvoiceNo(next.default_invoice_no || "");
+      setInvoiceNoError(null);
+      load();
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const downloadInvoice = async (inv: BillingInvoiceRecord) => {
+    setBusy(`dl:${inv.id}`);
+    try {
+      await api.billings.downloadInvoice(inv.id, inv.filename);
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const recordPayment = async () => {
+    if (!summaryParty || !summary) return;
+    const amount = Number(payAmount);
+    if (!amount || amount <= 0) { push("error", "Enter a valid payment amount"); return; }
+    if (!payRef.trim()) { push("error", "Reference number is required"); return; }
+    if (amount > summary.outstanding + 0.01) {
+      push("error", `Amount exceeds outstanding (${inr(summary.outstanding)})`);
+      return;
+    }
+    setRecordingPay(true);
+    try {
+      await api.billings.recordPayment(summaryParty.party_key, {
+        amount,
+        receiving_bank: payBank,
+        reference_number: payRef.trim(),
+        received_at: payDate,
+      });
+      push("success", "Payment recorded");
+      setPayAmount("");
+      setPayRef("");
+      await refreshSummary(summaryParty.party_key);
+      load();
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to record payment");
+    } finally {
+      setRecordingPay(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h2>Billings</h2>
+          <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 4 }}>
+            Generate invoices, track payments, and manage billing per company
+          </p>
+        </div>
+        {can("editor") && (
+          <button className="btn btn-secondary" onClick={() => router.push("/dashboard/billings/template")}>
+            <Receipt size={14} /> Global Template
+          </button>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ position: "relative", maxWidth: 360 }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+          <input className="input" style={{ paddingLeft: 32 }} placeholder="Search company or RTA code…"
+            value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="card" style={{ overflow: "hidden" }}>
+        {loading ? (
+          <div className="spinner-center" style={{ padding: 40 }}><span className="spinner spinner-lg" /></div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>RTA Codes</th>
+                <th>ISIN Units</th>
+                <th>Total Billed</th>
+                <th>Outstanding</th>
+                <th style={{ width: 100 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parties.map((p) => (
+                <tr key={p.party_key}>
+                  <td>
+                    <div style={{ fontWeight: 500 }}>{p.company_name || "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.party_key}</div>
+                  </td>
+                  <td style={{ fontSize: 12 }}>
+                    {p.nsdl_rta_code && <div>NSDL: {p.nsdl_rta_code}</div>}
+                    {p.cdsl_rta_code && <div>CDSL: {p.cdsl_rta_code}</div>}
+                  </td>
+                  <td>{p.isin_count}</td>
+                  <td>{inr(p.total_billed)}</td>
+                  <td>
+                    <span style={{ fontWeight: 600, color: p.outstanding > 0 ? "var(--danger)" : "var(--success, #16a34a)" }}>
+                      {inr(p.outstanding)}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {can("editor") && (
+                        <button className="btn btn-ghost btn-icon btn-sm" title="Billing settings"
+                          disabled={busy === `settings:${p.party_key}`}
+                          onClick={() => openSettings(p)}>
+                          {busy === `settings:${p.party_key}` ? <span className="spinner" /> : <Settings size={14} />}
+                        </button>
+                      )}
+                      <button className="btn btn-ghost btn-icon btn-sm" title="Billing summary"
+                        onClick={() => openSummary(p)}>
+                        <LayoutList size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Settings modal */}
+      {settingsParty && settings && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }}
+            onClick={() => { setSettingsParty(null); setSettings(null); }} />
+          <div className="card" style={{ position: "relative", zIndex: 1, width: 720, maxWidth: "94vw", maxHeight: "85vh", overflow: "auto", padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>Billing Settings</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  {settingsParty.company_name || settingsParty.party_key} — particulars &amp; prices only
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setSettingsParty(null); setSettings(null); }}>
+                <X size={16} />
+              </button>
+            </div>
+            <ParticularsEditor
+              particulars={settings.particulars}
+              isinCount={settings.isin_count}
+              onChange={(p) => setSettings((s) => s ? { ...s, particulars: p } : s)}
+            />
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
+              Preview total (incl. GST): {inr(settings.preview_total)}
+            </div>
+            {can("editor") && (
+              <button className="btn btn-primary" onClick={saveSettings} disabled={savingSettings}>
+                {savingSettings ? <span className="spinner" /> : <Check size={14} />} Save Settings
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Summary modal */}
+      {summaryParty && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }}
+            onClick={() => { setSummaryParty(null); setSummary(null); }} />
+          <div className="card" style={{ position: "relative", zIndex: 1, width: 860, maxWidth: "96vw", maxHeight: "90vh", overflow: "auto", padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>Billing Summary</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{summaryParty.company_name || summaryParty.party_key}</div>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => { setSummaryParty(null); setSummary(null); }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {loadingSummary || !summary ? (
+              <div className="spinner-center" style={{ padding: 32 }}><span className="spinner" /></div>
+            ) : (
+              <>
+                <div className="stat-grid" style={{ marginBottom: 20, gridTemplateColumns: "repeat(3, 1fr)" }}>
+                  <div className="stat-card">
+                    <div className="stat-card-label">Total Billed</div>
+                    <div className="stat-card-value">{inr(summary.total_billed)}</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-card-label">Total Received</div>
+                    <div className="stat-card-value">{inr(summary.total_received)}</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-card-label">Outstanding</div>
+                    <div className="stat-card-value" style={{ color: summary.outstanding > 0 ? "var(--danger)" : undefined }}>
+                      {inr(summary.outstanding)}
+                    </div>
+                  </div>
+                </div>
+
+                {can("editor") && (
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 10 }}>Generate New Invoice</div>
+                    <div className="grid-2" style={{ marginBottom: 10 }}>
+                      <div className="form-group">
+                        <label className="form-label">Invoice Date</label>
+                        <input className="input" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Invoice Number</label>
+                        <input className="input" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)}
+                          style={invoiceNoError ? { borderColor: "var(--danger)" } : undefined} />
+                        {defaultInvoiceNo && (
+                          <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 4, fontSize: 11 }}
+                            onClick={() => { setInvoiceNo(defaultInvoiceNo); setInvoiceNoError(null); }}>
+                            Use default ({defaultInvoiceNo})
+                          </button>
+                        )}
+                        {invoiceNoError && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{invoiceNoError}</div>}
+                      </div>
+                    </div>
+                    <button className="btn btn-primary" onClick={generateInvoice}
+                      disabled={generating || !!invoiceNoError}>
+                      {generating ? <span className="spinner" /> : <Receipt size={14} />} Generate Invoice
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Invoice History</div>
+                {summary.invoices.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>No invoices generated yet</div>
+                ) : (
+                  <table className="table" style={{ marginBottom: 20 }}>
+                    <thead>
+                      <tr>
+                        <th>Invoice No</th>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Generated</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.invoices.map((inv) => (
+                        <tr key={inv.id}>
+                          <td>{inv.invoice_no}</td>
+                          <td>{fmtDate(inv.invoice_date)}</td>
+                          <td>{inr(inv.grand_total)}</td>
+                          <td style={{ fontSize: 12 }}>{fmtDate(inv.generated_at)}</td>
+                          <td>
+                            <button className="btn btn-ghost btn-icon btn-sm" title="Redownload"
+                              disabled={busy === `dl:${inv.id}`}
+                              onClick={() => downloadInvoice(inv)}>
+                              {busy === `dl:${inv.id}` ? <span className="spinner" /> : <Download size={14} />}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {can("editor") && summary.outstanding > 0 && (
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 10 }}>Record Payment Received</div>
+                    <div className="grid-2">
+                      <div className="form-group">
+                        <label className="form-label">Amount (max {inr(summary.outstanding)})</label>
+                        <input className="input" type="number" min="0" step="0.01" value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Receiving Bank</label>
+                        <select className="input" value={payBank} onChange={(e) => setPayBank(e.target.value as "HDFC" | "IDFC")}>
+                          <option value="HDFC">HDFC Bank</option>
+                          <option value="IDFC">IDFC Bank</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Reference Number</label>
+                        <input className="input" value={payRef} onChange={(e) => setPayRef(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Payment Date</label>
+                        <input className="input" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                      </div>
+                    </div>
+                    <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={recordPayment} disabled={recordingPay}>
+                      {recordingPay ? <span className="spinner" /> : <Check size={14} />} Record Payment
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Payment History</div>
+                {summary.payments.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>No payments recorded</div>
+                ) : (
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Bank</th>
+                        <th>Reference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.payments.map((pay) => (
+                        <tr key={pay.id}>
+                          <td>{fmtDate(pay.received_at)}</td>
+                          <td>{inr(pay.amount)}</td>
+                          <td>{pay.receiving_bank}</td>
+                          <td>{pay.reference_number}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

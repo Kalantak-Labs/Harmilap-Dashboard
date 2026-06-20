@@ -333,4 +333,55 @@ export const api = {
     },
     filters: () => request<import("./types").ActionLogFilters>("/action-logs/filters"),
   },
+
+  billings: {
+    getConfig: () => request<import("./types").InvoiceConfig>("/billings/config"),
+    updateConfig: (body: object) =>
+      request<{ ok: boolean }>("/billings/config", { method: "PUT", body: JSON.stringify(body) }),
+    listParties: (search?: string) => {
+      const q = search ? `?search=${encodeURIComponent(search)}` : "";
+      return request<import("./types").PartyBillingItem[]>(`/billings/parties${q}`);
+    },
+    getSettings: (partyKey: string) =>
+      request<import("./types").PartyBillingSettings>(`/billings/parties/${encodeURIComponent(partyKey)}/settings`),
+    updateSettings: (partyKey: string, body: { particulars: import("./types").Particular[] }) =>
+      request<import("./types").PartyBillingSettings>(
+        `/billings/parties/${encodeURIComponent(partyKey)}/settings`,
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
+    getSummary: (partyKey: string) =>
+      request<import("./types").PartyBillingSummary>(`/billings/parties/${encodeURIComponent(partyKey)}/summary`),
+    checkInvoiceNo: (invoiceNo: string, partyKey: string, invoiceDate?: string) => {
+      const qs = new URLSearchParams({ invoice_no: invoiceNo, party_key: partyKey });
+      if (invoiceDate) qs.set("invoice_date", invoiceDate);
+      return request<{ available: boolean; default_invoice_no: string | null }>(`/billings/check-invoice-no?${qs}`);
+    },
+    generateInvoice: (partyKey: string, body: { invoice_no: string; invoice_date: string }) =>
+      request<import("./types").BillingInvoiceRecord>(
+        `/billings/parties/${encodeURIComponent(partyKey)}/invoices`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    downloadInvoice: async (invoiceId: string, filename: string) => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`${BASE}/billings/invoices/${invoiceId}/pdf`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    },
+    recordPayment: (partyKey: string, body: {
+      amount: number;
+      receiving_bank: "HDFC" | "IDFC";
+      reference_number: string;
+      received_at: string;
+    }) =>
+      request<import("./types").BillingPaymentRecord>(
+        `/billings/parties/${encodeURIComponent(partyKey)}/payments`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+  },
 };

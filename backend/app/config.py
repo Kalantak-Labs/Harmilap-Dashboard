@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     # Comma-separated origins, e.g. "https://app.example.com,http://localhost:3000"
     cors_origins: str = "http://localhost:3000"
 
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_s3_bucket: str | None = None
+    aws_region: str = "ap-south-1"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

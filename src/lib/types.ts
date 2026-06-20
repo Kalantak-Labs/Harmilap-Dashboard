@@ -338,3 +338,56 @@ export interface ActionLogFilters {
   actions: string[];
   resource_types: string[];
 }
+
+export interface PartyBillingItem {
+  party_key: string;
+  nsdl_rta_code: string | null;
+  cdsl_rta_code: string | null;
+  company_name: string | null;
+  isin_count: number;
+  isins: string[];
+  total_billed: number;
+  total_received: number;
+  outstanding: number;
+  invoice_count: number;
+}
+
+export interface PartyBillingSettings {
+  party_key: string;
+  company_name: string | null;
+  isin_count: number;
+  particulars: Particular[];
+  preview_total: number;
+}
+
+export interface BillingInvoiceRecord {
+  id: string;
+  invoice_no: string;
+  invoice_date: string;
+  fiscal_year: string;
+  grand_total: number;
+  filename: string;
+  generated_at: string;
+}
+
+export interface BillingPaymentRecord {
+  id: string;
+  amount: number;
+  receiving_bank: string;
+  reference_number: string;
+  received_at: string;
+  created_at: string;
+}
+
+export interface PartyBillingSummary {
+  party_key: string;
+  company_name: string | null;
+  nsdl_rta_code: string | null;
+  cdsl_rta_code: string | null;
+  isin_count: number;
+  total_billed: number;
+  total_received: number;
+  outstanding: number;
+  invoices: BillingInvoiceRecord[];
+  payments: BillingPaymentRecord[];
+}
