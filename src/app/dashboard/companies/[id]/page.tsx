@@ -63,6 +63,7 @@ export default function CompanyDetailPage() {
   const save = async () => {
     const nsdl = (form.nsdl_rta_code ?? "").toString();
     if (nsdl.trim() && !/RTAN/i.test(nsdl)) { push("error", "NSDL RTA Code must contain \"RTAN\""); return; }
+    if (form.face_value != null && String(form.face_value) !== "" && Number(form.face_value) % 10 !== 0) { push("error", "Face value must be a multiple of 10"); return; }
     setSaving(true);
     try {
       const updated = await api.companies.update(id, {

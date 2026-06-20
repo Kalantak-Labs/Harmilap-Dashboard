@@ -29,6 +29,14 @@ def _non_negative(v: int | None) -> int | None:
     return v
 
 
+def _validate_face_value(v: float | None) -> float | None:
+    if v is None:
+        return None
+    if v % 10 != 0:
+        raise ValueError("Face value must be a multiple of 10")
+    return v
+
+
 def _isin_check_digit_ok(isin: str) -> bool:
     """ISIN Luhn check: letters → numbers (A=10..Z=35), then mod-10 Luhn over the digits."""
     s = "".join(str(ord(c) - 55) if c.isalpha() else c for c in isin)
@@ -193,6 +201,11 @@ class CompanyBase(BaseModel):
     def validate_state(cls, v: str | None) -> str | None:
         return _validate_state(v)
 
+    @field_validator("face_value")
+    @classmethod
+    def validate_face_value(cls, v: float | None) -> float | None:
+        return _validate_face_value(v)
+
 
 class CompanyCreate(CompanyBase):
     # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
@@ -272,6 +285,11 @@ class CompanyUpdate(BaseModel):
     @classmethod
     def validate_state(cls, v: str | None) -> str | None:
         return _validate_state(v)
+
+    @field_validator("face_value")
+    @classmethod
+    def validate_face_value(cls, v: float | None) -> float | None:
+        return _validate_face_value(v)
 
     # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
     @field_validator("total_shares", "nsdl_shares", "cdsl_shares")

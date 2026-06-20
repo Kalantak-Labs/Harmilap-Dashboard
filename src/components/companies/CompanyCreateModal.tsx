@@ -54,6 +54,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     if (!isinEntered && !hasArn) { push("error", "Enter an ISIN code or an ARN number"); return; }
     if (isinEntered && !isinValid) { push("error", "ISIN must be exactly 12 alphanumeric characters"); return; }
     if (form.nsdl_rta_code.trim() && !/RTAN/i.test(form.nsdl_rta_code)) { push("error", "NSDL RTA Code must contain \"RTAN\""); return; }
+    if (form.face_value && Number(form.face_value) % 10 !== 0) { push("error", "Face value must be a multiple of 10"); return; }
     setLoading(true);
     try {
       await api.companies.create({
@@ -146,7 +147,8 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
               </div>
               <div className="form-group">
                 <label className="form-label">Face Value (₹)</label>
-                <input className="input" type="number" min="0" step="any" value={form.face_value ?? ""} onChange={(e) => set("face_value", e.target.value)} />
+                <input className="input" type="number" min="0" step="10" value={form.face_value ?? ""} onChange={(e) => set("face_value", e.target.value)} />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>Must be a multiple of 10</div>
               </div>
             </div>
 
