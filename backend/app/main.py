@@ -108,6 +108,33 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_date DATE"
         ))
 
+        # ── Referential integrity: beneficiaries / benpos_lockin → companies ──
+        for _tbl in ("beneficiaries", "benpos_lockin"):
+            await conn.execute(text(f"ALTER TABLE {_tbl} ADD COLUMN IF NOT EXISTS company_id UUID"))
+            await conn.execute(text(
+                f"UPDATE {_tbl} t SET company_id = c.id FROM companies c "
+                f"WHERE c.isin_code = t.isin_code AND t.company_id IS NULL"
+            ))
+            # drop rows that reference a non-existent company (cannot satisfy the FK)
+            await conn.execute(text(f"DELETE FROM {_tbl} WHERE company_id IS NULL"))
+            await conn.execute(text(
+                f"DO $$ BEGIN "
+                f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_{_tbl}_company') THEN "
+                f"ALTER TABLE {_tbl} ADD CONSTRAINT fk_{_tbl}_company "
+                f"FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE; "
+                f"END IF; END $$"
+            ))
+            await conn.execute(text(f"ALTER TABLE {_tbl} ALTER COLUMN company_id SET NOT NULL"))
+            await conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{_tbl}_company_id ON {_tbl}(company_id)"))
+
+        # invoices: remove any invoice whose RTA code maps to no company
+        await conn.execute(text(
+            "DELETE FROM invoices i WHERE NOT EXISTS ("
+            "  SELECT 1 FROM companies c WHERE"
+            "    (i.nsdl_rta_code IS NOT NULL AND c.nsdl_rta_code = i.nsdl_rta_code) OR"
+            "    (i.cdsl_rta_code IS NOT NULL AND c.cdsl_rta_code = i.cdsl_rta_code))"
+        ))
+
         # invoices: unique invoice numbers (when set)
         await conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_invoices_invoice_no "

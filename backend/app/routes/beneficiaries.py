@@ -25,43 +25,22 @@ NSDL = "NSDL"
 CDSL = "CDSL"
 
 
-async def _delete_beneficiary_keys(
-    db: AsyncSession,
-    isin: str,
-    dp_id: str,
-    client_id: str,
-) -> None:
-    """Remove any existing row for this key (handles NSDL ↔ CDSL moves)."""
-    await db.execute(
-        delete(Beneficiary).where(
-            Beneficiary.isin_code == isin,
-            Beneficiary.dp_id == dp_id,
-            Beneficiary.client_id == client_id,
-        )
-    )
+async def _wipe_depository(db: AsyncSession, depository: str) -> None:
+    """Delete ALL beneficiaries of a depository (a fresh upload fully replaces it).
+    NSDL also clears all benpos lock-ins, which are sourced from NSDL files only."""
+    await db.execute(delete(Beneficiary).where(Beneficiary.depository == depository))
+    if depository == NSDL:
+        await db.execute(delete(BenposLockin))
 
 
-async def _overwrite_all_beneficiaries(db: AsyncSession, isin: str) -> None:
-    """Drop all beneficiaries for this ISIN across both depositories."""
-    await db.execute(delete(Beneficiary).where(Beneficiary.isin_code == isin))
-
-
-async def _overwrite_depository_beneficiaries(
-    db: AsyncSession,
-    isin: str,
-    depository: str,
-) -> None:
-    """Drop all beneficiaries for this ISIN at the given depository."""
-    await db.execute(
-        delete(Beneficiary).where(
-            Beneficiary.isin_code == isin,
-            Beneficiary.depository == depository,
-        )
-    )
-
-
-async def _overwrite_nsdl_lockins(db: AsyncSession, isin: str) -> None:
-    await db.execute(delete(BenposLockin).where(BenposLockin.isin_code == isin))
+async def _company_id_map(db: AsyncSession, isins: set[str]) -> dict[str, "uuid.UUID"]:
+    """Map ISIN → company id for the given ISINs (only those with a company)."""
+    if not isins:
+        return {}
+    rows = (await db.execute(
+        select(Company.isin_code, Company.id).where(Company.isin_code.in_(isins))
+    )).all()
+    return {isin: cid for isin, cid in rows}
 
 
 def _search_filter(query, search: str | None):
@@ -170,6 +149,11 @@ async def ingest_zip(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ZIP file")
 
     txt_files = [n for n in zf.namelist() if n.lower().endswith(".txt") and not n.startswith("__")]
+    if not txt_files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ZIP contains no .txt NSDL files")
+
+    # Full replace: wipe ALL NSDL beneficiaries (and lock-ins) before loading the new set
+    await _wipe_depository(db, NSDL)
 
     for fname in txt_files:
         try:
@@ -208,20 +192,19 @@ async def ingest_zip(
                 files_skipped += 1
                 continue
 
-            # Overwrite: clear all beneficiaries (both depositories) + lock-ins, then load NSDL
-            await _overwrite_nsdl_lockins(db, isin)
-            await _overwrite_all_beneficiaries(db, isin)
-
+            # NSDL data was already wiped globally above; just load this ISIN's rows
             for rec in details:
                 dp_id = rec["dp_id"]
                 client_id = rec["client_id"]
                 if not dp_id or not client_id:
                     continue
                 rec["depository"] = NSDL
+                rec["company_id"] = company_obj.id
                 db.add(Beneficiary(**rec))
                 total_created += 1
 
             for rec in lockins:
+                rec["company_id"] = company_obj.id
                 db.add(BenposLockin(**rec))
 
             # Sync NSDL share total from file header into company record
@@ -317,20 +300,23 @@ async def ingest_cdsl_zip(
         company_obj.updated_at = datetime.now(timezone.utc)
         cdsl_updated += 1
 
-    # --- RT02: overwrite CDSL beneficiaries per ISIN (NSDL rows from prior upload are kept) ---
+    # --- RT02: full replace — wipe ALL CDSL beneficiaries, then load the new set ---
     records, parse_errors = parse_rt02(rt02_content)
     errors.extend(parse_errors[:20])
 
-    isins_in_rt02 = {rec["isin_code"] for rec in records}
-    for isin in isins_in_rt95 | isins_in_rt02:
-        await _overwrite_depository_beneficiaries(db, isin, CDSL)
+    await _wipe_depository(db, CDSL)
 
+    cid_map = await _company_id_map(db, {rec["isin_code"] for rec in records})
     for rec in records:
         isin = rec["isin_code"]
-        dp_id = rec["dp_id"]
-        client_id = rec["client_id"]
-        await _delete_beneficiary_keys(db, isin, dp_id, client_id)
+        company_id = cid_map.get(isin)
+        if company_id is None:
+            if isin not in unknown_isins:
+                unknown_isins.append(isin)
+            total_skipped += 1
+            continue
         rec["depository"] = CDSL
+        rec["company_id"] = company_id
         db.add(Beneficiary(**rec))
         total_created += 1
 

@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.company import Company
 from app.models.beneficiary import Beneficiary, BenposLockin
 from app.models.generated_invoice import GeneratedInvoice
+from app.models.invoice import Invoice
 from app.models.user import User
 from app.schemas.company import (
     CompanyCreate, CompanyUpdate, CompanyOut, CompanyListOut, IngestResult, CompanyStats,
@@ -382,13 +383,37 @@ async def delete_company(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
     isin = company.isin_code
+    nsdl_rta = company.nsdl_rta_code
+    cdsl_rta = company.cdsl_rta_code
 
-    # Cascade-delete all related data (FK constraints don't cascade automatically).
-    # Beneficiary/benpos rows are keyed by ISIN, so only purge them for ISIN-backed companies.
+    # Beneficiaries / lock-ins cascade via the company_id FK; the explicit deletes
+    # are a safeguard for any rows keyed only by ISIN.
     if isin:
         await db.execute(delete(BenposLockin).where(BenposLockin.isin_code == isin))
         await db.execute(delete(Beneficiary).where(Beneficiary.isin_code == isin))
     await db.execute(delete(GeneratedInvoice).where(GeneratedInvoice.company_id == company.id))
 
     await db.delete(company)
+    await db.flush()
+
+    # Remove invoices orphaned by this delete: an invoice is orphaned only when
+    # neither of its RTA codes maps to any remaining company.
+    codes = [c for c in (nsdl_rta, cdsl_rta) if c]
+    if codes:
+        candidates = (await db.execute(
+            select(Invoice).where(or_(Invoice.nsdl_rta_code.in_(codes), Invoice.cdsl_rta_code.in_(codes)))
+        )).scalars().all()
+        for inv in candidates:
+            mapped = False
+            if inv.nsdl_rta_code:
+                mapped = (await db.execute(
+                    select(Company.id).where(Company.nsdl_rta_code == inv.nsdl_rta_code).limit(1)
+                )).scalar_one_or_none() is not None
+            if not mapped and inv.cdsl_rta_code:
+                mapped = (await db.execute(
+                    select(Company.id).where(Company.cdsl_rta_code == inv.cdsl_rta_code).limit(1)
+                )).scalar_one_or_none() is not None
+            if not mapped:
+                await db.delete(inv)
+
     await db.commit()
