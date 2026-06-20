@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select, func as sql_func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from app.services.email_service import (
 from app.services.pdf_generator import (
     current_fy, generate_benpos_pdf, generate_invoice_pdf, generate_report_pdf,
 )
+from app.services.action_log import log_action, model_to_log_dict, diff_fields
 
 router = APIRouter(prefix="/emails", tags=["emails"])
 
@@ -144,13 +145,26 @@ async def get_email_settings(
 @router.put("/settings", response_model=EmailSettingsOut)
 async def update_email_settings(
     body: EmailSettingsBody,
-    _: User = Depends(require_admin),
+    request: Request,
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     s = await _get_settings(db)
+    before = model_to_log_dict(s, ignore={"smtp_password"})
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(s, field, value)
     s.updated_at = datetime.now(timezone.utc)
+    after = model_to_log_dict(s, ignore={"smtp_password"})
+    await log_action(
+        db,
+        current_user,
+        "update",
+        "email_settings",
+        resource_id="1",
+        resource_label="Email settings",
+        details={"changes": diff_fields(before, after, ignore={"smtp_password"})},
+        request=request,
+    )
     await db.commit()
     await db.refresh(s)
     return _settings_out(s)
@@ -158,7 +172,8 @@ async def update_email_settings(
 
 @router.post("/settings/test")
 async def test_smtp(
-    _: User = Depends(require_admin),
+    request: Request,
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     s = await _get_settings(db)
@@ -167,6 +182,17 @@ async def test_smtp(
     err = await test_connection(s)
     if err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Connection failed: {err}")
+    await log_action(
+        db,
+        current_user,
+        "test",
+        "email_settings",
+        resource_id="1",
+        resource_label="SMTP connection test",
+        details={"result": "success"},
+        request=request,
+    )
+    await db.commit()
     return {"ok": True, "message": "Connection successful"}
 
 
@@ -230,7 +256,8 @@ async def list_templates(
 @router.post("/templates", response_model=TemplateOut, status_code=status.HTTP_201_CREATED)
 async def create_template(
     body: TemplateCreate,
-    _: User = Depends(require_permission("editor")),
+    request: Request,
+    current_user: User = Depends(require_permission("editor")),
     db: AsyncSession = Depends(get_db),
 ):
     if body.email_type not in EMAIL_TYPES:
@@ -240,6 +267,17 @@ async def create_template(
         await _clear_defaults(body.email_type, db)
     t = EmailTemplate(**body.model_dump())
     db.add(t)
+    await db.flush()
+    await log_action(
+        db,
+        current_user,
+        "create",
+        "email_template",
+        resource_id=str(t.id),
+        resource_label=t.name,
+        details={"values": model_to_log_dict(t, ignore={"id", "created_at", "updated_at"})},
+        request=request,
+    )
     await db.commit()
     await db.refresh(t)
     return t
@@ -249,17 +287,33 @@ async def create_template(
 async def update_template(
     tid: uuid.UUID,
     body: TemplateUpdate,
-    _: User = Depends(require_permission("editor")),
+    request: Request,
+    current_user: User = Depends(require_permission("editor")),
     db: AsyncSession = Depends(get_db),
 ):
     t = (await db.execute(select(EmailTemplate).where(EmailTemplate.id == tid))).scalar_one_or_none()
     if not t:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template not found")
+    before = model_to_log_dict(t, ignore={"created_at", "updated_at"})
     if body.is_default:
         await _clear_defaults(t.email_type, db)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(t, field, value)
     t.updated_at = datetime.now(timezone.utc)
+    after = model_to_log_dict(t, ignore={"created_at", "updated_at"})
+    await log_action(
+        db,
+        current_user,
+        "update",
+        "email_template",
+        resource_id=str(t.id),
+        resource_label=t.name,
+        details={
+            "changes": diff_fields(before, after, ignore={"created_at", "updated_at"}),
+            "fields_updated": list(body.model_dump(exclude_none=True).keys()),
+        },
+        request=request,
+    )
     await db.commit()
     await db.refresh(t)
     return t
@@ -268,13 +322,26 @@ async def update_template(
 @router.delete("/templates/{tid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_template(
     tid: uuid.UUID,
-    _: User = Depends(require_permission("editor")),
+    request: Request,
+    current_user: User = Depends(require_permission("editor")),
     db: AsyncSession = Depends(get_db),
 ):
     t = (await db.execute(select(EmailTemplate).where(EmailTemplate.id == tid))).scalar_one_or_none()
     if not t:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Template not found")
+    snapshot = model_to_log_dict(t, ignore={"created_at", "updated_at"})
+    label = t.name
     await db.delete(t)
+    await log_action(
+        db,
+        current_user,
+        "delete",
+        "email_template",
+        resource_id=str(tid),
+        resource_label=label,
+        details={"deleted": snapshot},
+        request=request,
+    )
     await db.commit()
 
 
@@ -332,7 +399,8 @@ class SendResponse(BaseModel):
 @router.post("/send", response_model=SendResponse)
 async def send_emails_endpoint(
     body: SendBody,
-    _: User = Depends(require_permission("can_download")),
+    request: Request,
+    current_user: User = Depends(require_permission("can_download")),
     db: AsyncSession = Depends(get_db),
 ):
     s = await _get_settings(db)
@@ -423,4 +491,21 @@ async def send_emails_endpoint(
     sent     = sum(1 for r in results if r["status"] == "sent")
     failed   = sum(1 for r in results if r["status"] == "failed")
     no_email = sum(1 for r in results if r["status"] == "no_email")
+    await log_action(
+        db,
+        current_user,
+        "send",
+        "email",
+        details={
+            "email_type": body.email_type,
+            "template_id": str(body.template_id),
+            "company_count": len(body.company_ids),
+            "sent": sent,
+            "failed": failed,
+            "no_email": no_email,
+            "results": results,
+        },
+        request=request,
+    )
+    await db.commit()
     return SendResponse(sent=sent, failed=failed, no_email=no_email, results=results)

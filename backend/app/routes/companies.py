@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func, delete
@@ -20,6 +20,7 @@ from app.schemas.company import (
 )
 from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
 from app.services.excel import parse_excel, build_export_excel
+from app.services.action_log import log_action, model_to_log_dict, diff_fields, company_label, COMPANY_AUDIT_IGNORE
 from app.dependencies import get_current_user, require_permission
 
 router = APIRouter(prefix="/companies", tags=["companies"])
@@ -130,6 +131,7 @@ async def count_companies(
 
 @router.get("/export")
 async def export_companies(
+    request: Request,
     search: str | None = Query(None),
     security_type: str | None = Query(None),
     has_nsdl: bool | None = Query(None),
@@ -165,6 +167,24 @@ async def export_companies(
         })
 
     excel_bytes = build_export_excel(rows)
+    await log_action(
+        db,
+        current_user,
+        "export",
+        "company",
+        details={
+            "filename": "companies.xlsx",
+            "row_count": len(rows),
+            "filters": {
+                "search": search,
+                "security_type": security_type,
+                "has_nsdl": has_nsdl,
+                "has_cdsl": has_cdsl,
+            },
+        },
+        request=request,
+    )
+    await db.commit()
     return Response(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -174,6 +194,7 @@ async def export_companies(
 
 @router.post("/ingest", response_model=IngestResult)
 async def ingest_excel(
+    request: Request,
     file: Annotated[UploadFile, File()],
     current_user: User = Depends(require_permission("can_ingest")),
     db: AsyncSession = Depends(get_db),
@@ -254,12 +275,28 @@ async def ingest_excel(
             errors.append(f"{key_label}: {e}")
             skipped += 1
 
+    await log_action(
+        db,
+        current_user,
+        "ingest",
+        "company",
+        details={
+            "filename": file.filename,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "error_count": len(errors),
+            "errors": errors[:20],
+        },
+        request=request,
+    )
     await db.commit()
     return IngestResult(created=created, updated=updated, skipped=skipped, errors=errors)
 
 
 @router.post("/", response_model=CompanyOut, status_code=status.HTTP_201_CREATED)
 async def create_company(
+    request: Request,
     body: CompanyCreate,
     current_user: User = Depends(require_permission("editor")),
     db: AsyncSession = Depends(get_db),
@@ -282,6 +319,17 @@ async def create_company(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     db.add(company)
+    await db.flush()
+    await log_action(
+        db,
+        current_user,
+        "create",
+        "company",
+        resource_id=str(company.id),
+        resource_label=company_label(company),
+        details={"values": model_to_log_dict(company, ignore=COMPANY_AUDIT_IGNORE | {"id"})},
+        request=request,
+    )
     await db.commit()
     await db.refresh(company)
     return company
@@ -328,6 +376,7 @@ async def get_company(
 
 @router.patch("/{company_id}", response_model=CompanyOut)
 async def update_company(
+    request: Request,
     company_id: uuid.UUID,
     body: CompanyUpdate,
     current_user: User = Depends(require_permission("editor")),
@@ -338,6 +387,7 @@ async def update_company(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
+    before = model_to_log_dict(company, ignore=COMPANY_AUDIT_IGNORE)
     updates = body.model_dump(exclude_none=True)
 
     # Guard uniqueness when ISIN/ARN are being changed
@@ -368,6 +418,20 @@ async def update_company(
 
     company.updated_at = datetime.now(timezone.utc)
     company.updated_by = current_user.id
+    after = model_to_log_dict(company, ignore=COMPANY_AUDIT_IGNORE)
+    await log_action(
+        db,
+        current_user,
+        "update",
+        "company",
+        resource_id=str(company.id),
+        resource_label=company_label(company),
+        details={
+            "changes": diff_fields(before, after, ignore=COMPANY_AUDIT_IGNORE),
+            "fields_updated": list(updates.keys()),
+        },
+        request=request,
+    )
     await db.commit()
     await db.refresh(company)
     return company
@@ -375,6 +439,7 @@ async def update_company(
 
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_company(
+    request: Request,
     company_id: uuid.UUID,
     current_user: User = Depends(require_permission("editor")),
     db: AsyncSession = Depends(get_db),
@@ -387,6 +452,8 @@ async def delete_company(
     isin = company.isin_code
     nsdl_rta = company.nsdl_rta_code
     cdsl_rta = company.cdsl_rta_code
+    snapshot = model_to_log_dict(company, ignore=COMPANY_AUDIT_IGNORE)
+    label = company_label(company)
 
     # Beneficiaries / lock-ins cascade via the company_id FK; the explicit deletes
     # are a safeguard for any rows keyed only by ISIN.
@@ -418,4 +485,14 @@ async def delete_company(
             if not mapped:
                 await db.delete(inv)
 
+    await log_action(
+        db,
+        current_user,
+        "delete",
+        "company",
+        resource_id=str(company_id),
+        resource_label=label,
+        details={"deleted": snapshot, "isin_code": isin},
+        request=request,
+    )
     await db.commit()

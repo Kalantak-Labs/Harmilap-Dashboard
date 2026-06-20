@@ -6,10 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate, GstStateCode, PanHolderType  # ensure models are registered
+from app.models import User, Session, Company, Beneficiary, BenposLockin, InvoiceConfig, Invoice, InvoicePdfArchive, EmailSettings, EmailTemplate, GstStateCode, PanHolderType, ActionLog  # ensure models are registered
 from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
 from app.schemas.company import INDIAN_STATES_UTS
-from app.routes import auth, users, companies, beneficiaries, reports, emails, invoices
+from app.routes import auth, users, companies, beneficiaries, reports, emails, invoices, action_logs
 
 
 @asynccontextmanager
@@ -244,6 +244,7 @@ app.include_router(beneficiaries.router)
 app.include_router(reports.router)
 app.include_router(invoices.router)
 app.include_router(emails.router)
+app.include_router(action_logs.router)
 
 
 @app.get("/health")

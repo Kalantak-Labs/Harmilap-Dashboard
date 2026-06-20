@@ -6,10 +6,12 @@ from app.models.generated_invoice import GeneratedInvoice
 from app.models.invoice import Invoice
 from app.models.invoice_pdf_archive import InvoicePdfArchive
 from app.models.email_settings import EmailSettings, EmailTemplate
+from app.models.action_log import ActionLog
 from app.models.reference import GstStateCode, PanHolderType
 
 __all__ = [
     "User", "Session", "Company", "Beneficiary", "BenposLockin",
     "InvoiceConfig", "GeneratedInvoice", "Invoice", "InvoicePdfArchive",
     "EmailSettings", "EmailTemplate", "GstStateCode", "PanHolderType",
+    "ActionLog",
 ]

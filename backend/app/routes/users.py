@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate, UserOut, UserPasswordChange
 from app.services.auth import hash_password, verify_password
+from app.services.action_log import log_action, model_to_log_dict, diff_fields, USER_AUDIT_IGNORE
 from app.dependencies import get_current_user, require_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -33,7 +34,8 @@ async def list_users(
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
-    _: User = Depends(require_admin),
+    request: Request,
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(User).where(User.email == body.email))
@@ -48,6 +50,17 @@ async def create_user(
         permissions=body.permissions,
     )
     db.add(user)
+    await db.flush()
+    await log_action(
+        db,
+        current_user,
+        "create",
+        "user",
+        resource_id=str(user.id),
+        resource_label=user.email,
+        details={"values": model_to_log_dict(user, ignore=USER_AUDIT_IGNORE | {"id"})},
+        request=request,
+    )
     await db.commit()
     await db.refresh(user)
     return user
@@ -61,6 +74,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 @router.patch("/me/password")
 async def change_own_password(
     body: UserPasswordChange,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -68,6 +82,16 @@ async def change_own_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
     current_user.password_hash = hash_password(body.new_password)
     current_user.updated_at = datetime.now(timezone.utc)
+    await log_action(
+        db,
+        current_user,
+        "password_change",
+        "auth",
+        resource_id=str(current_user.id),
+        resource_label=current_user.email,
+        details={"target_user_id": str(current_user.id)},
+        request=request,
+    )
     await db.commit()
     return {"detail": "Password updated"}
 
@@ -89,6 +113,7 @@ async def get_user(
 async def update_user(
     user_id: uuid.UUID,
     body: UserUpdate,
+    request: Request,
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,6 +121,8 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    before = model_to_log_dict(user, ignore=USER_AUDIT_IGNORE)
 
     # Protect the last active admin from being demoted or deactivated
     if user.role == "admin" and user.is_active:
@@ -113,6 +140,20 @@ async def update_user(
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(user, field, value)
     user.updated_at = datetime.now(timezone.utc)
+    after = model_to_log_dict(user, ignore=USER_AUDIT_IGNORE)
+    await log_action(
+        db,
+        current_user,
+        "update",
+        "user",
+        resource_id=str(user.id),
+        resource_label=user.email,
+        details={
+            "changes": diff_fields(before, after, ignore=USER_AUDIT_IGNORE),
+            "fields_updated": list(body.model_dump(exclude_none=True).keys()),
+        },
+        request=request,
+    )
     await db.commit()
     await db.refresh(user)
     return user
@@ -121,6 +162,7 @@ async def update_user(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -141,5 +183,16 @@ async def delete_user(
                 detail="Cannot delete the only active admin account — promote another user to admin first",
             )
 
+    snapshot = model_to_log_dict(user, ignore=USER_AUDIT_IGNORE)
     await db.delete(user)
+    await log_action(
+        db,
+        current_user,
+        "delete",
+        "user",
+        resource_id=str(user_id),
+        resource_label=snapshot.get("email"),
+        details={"deleted": snapshot},
+        request=request,
+    )
     await db.commit()

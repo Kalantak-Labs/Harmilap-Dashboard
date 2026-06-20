@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from app.services.auth import (
     decode_token,
     refresh_token_expires_at,
 )
+from app.services.action_log import log_action
 from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -37,6 +39,15 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         user_agent=request.headers.get("user-agent"),
     )
     db.add(session)
+    await log_action(
+        db,
+        user,
+        "login",
+        "auth",
+        resource_id=str(user.id),
+        resource_label=user.email,
+        request=request,
+    )
     await db.commit()
 
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
@@ -68,8 +79,23 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/logout")
-async def logout(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def logout(body: RefreshRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    user = None
+    payload = decode_token(body.refresh_token)
+    if payload and payload.get("type") == "refresh" and payload.get("sub"):
+        user_result = await db.execute(select(User).where(User.id == uuid.UUID(payload["sub"])))
+        user = user_result.scalar_one_or_none()
     await db.execute(delete(Session).where(Session.refresh_token == body.refresh_token))
+    if user:
+        await log_action(
+            db,
+            user,
+            "logout",
+            "auth",
+            resource_id=str(user.id),
+            resource_label=user.email,
+            request=request,
+        )
     await db.commit()
     return {"detail": "Logged out"}
 

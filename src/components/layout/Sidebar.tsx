@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Building2, Users, LayoutDashboard, LogOut, ChevronRight, UserCheck, FileText, Mail, Receipt } from "lucide-react";
+import { Building2, Users, LayoutDashboard, LogOut, ChevronRight, UserCheck, FileText, Mail, Receipt, ScrollText } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface NavItem {
@@ -19,6 +19,7 @@ const nav: NavItem[] = [
   { href: "/dashboard/reports", label: "Reports", icon: <FileText size={16} /> },
   { href: "/dashboard/invoices", label: "Tax Invoices", icon: <Receipt size={16} /> },
   { href: "/dashboard/emails", label: "Email", icon: <Mail size={16} /> },
+  { href: "/dashboard/action-logs", label: "Action Logs", icon: <ScrollText size={16} />, adminOnly: true },
   { href: "/dashboard/users", label: "Users", icon: <Users size={16} />, adminOnly: true },
 ];
 

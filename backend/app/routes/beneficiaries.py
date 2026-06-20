@@ -4,7 +4,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func, delete
@@ -17,6 +17,7 @@ from app.schemas.beneficiary import BeneficiaryListOut, BeneficiaryOut, ZipInges
 from app.services.benpos_parser import parse_benpos_file
 from app.services.cdsl_parser import is_rt02, parse_rt95, parse_rt02
 from app.services.excel import build_beneficiary_export
+from app.services.action_log import log_action
 from app.dependencies import require_permission
 
 router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
@@ -93,6 +94,7 @@ async def count_beneficiaries(
 
 @router.get("/export")
 async def export_beneficiaries(
+    request: Request,
     isin_code: str | None = Query(None),
     search: str | None = Query(None),
     current_user: User = Depends(require_permission("can_download")),
@@ -122,6 +124,20 @@ async def export_beneficiaries(
     ]
     excel_bytes = build_beneficiary_export(rows)
     filename = f"beneficiaries{'_' + isin_code if isin_code else ''}.xlsx"
+    await log_action(
+        db,
+        current_user,
+        "export",
+        "beneficiary",
+        details={
+            "filename": filename,
+            "row_count": len(rows),
+            "isin_code": isin_code,
+            "search": search,
+        },
+        request=request,
+    )
+    await db.commit()
     return Response(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -131,6 +147,7 @@ async def export_beneficiaries(
 
 @router.post("/ingest-zip", response_model=ZipIngestResult)
 async def ingest_zip(
+    request: Request,
     file: Annotated[UploadFile, File()],
     current_user: User = Depends(require_permission("can_ingest")),
     db: AsyncSession = Depends(get_db),
@@ -222,6 +239,23 @@ async def ingest_zip(
             errors.append(f"{fname}: unexpected error — {e}")
             files_skipped += 1
 
+    await log_action(
+        db,
+        current_user,
+        "ingest",
+        "beneficiary",
+        details={
+            "depository": NSDL,
+            "filename": file.filename,
+            "files_processed": files_processed,
+            "files_skipped": files_skipped,
+            "total_created": total_created,
+            "nsdl_updated": nsdl_updated,
+            "unknown_isins": unknown_isins,
+            "errors": errors[:20],
+        },
+        request=request,
+    )
     await db.commit()
 
     return ZipIngestResult(
@@ -238,6 +272,7 @@ async def ingest_zip(
 
 @router.post("/ingest-cdsl-zip", response_model=ZipIngestResult)
 async def ingest_cdsl_zip(
+    request: Request,
     file: Annotated[UploadFile, File()],
     current_user: User = Depends(require_permission("can_ingest")),
     db: AsyncSession = Depends(get_db),
@@ -320,6 +355,22 @@ async def ingest_cdsl_zip(
         db.add(Beneficiary(**rec))
         total_created += 1
 
+    await log_action(
+        db,
+        current_user,
+        "ingest",
+        "beneficiary",
+        details={
+            "depository": CDSL,
+            "filename": file.filename,
+            "total_created": total_created,
+            "total_skipped": total_skipped,
+            "cdsl_updated": cdsl_updated,
+            "unknown_isins": unknown_isins,
+            "errors": errors[:20],
+        },
+        request=request,
+    )
     await db.commit()
 
     return ZipIngestResult(

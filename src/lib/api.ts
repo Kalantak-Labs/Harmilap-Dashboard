@@ -319,4 +319,18 @@ export const api = {
       return `${BASE}/companies/export${q ? `?${q}` : ""}`;
     },
   },
+
+  actionLogs: {
+    list: (params?: Record<string, string | number | undefined>) => {
+      const qs = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== "") qs.set(k, String(v));
+        });
+      }
+      const q = qs.toString();
+      return request<import("./types").ActionLogListResponse>(`/action-logs/${q ? `?${q}` : ""}`);
+    },
+    filters: () => request<import("./types").ActionLogFilters>("/action-logs/filters"),
+  },
 };

@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, or_, func as sql_func
@@ -20,6 +20,7 @@ from app.schemas.invoice import (
 )
 from app.services.invoice_excel import build_invoice_export, parse_invoice_excel
 from app.services.pdf_generator import current_fy, generate_invoice_pdf, zip_pdfs
+from app.services.action_log import log_action, model_to_log_dict, diff_fields, INVOICE_AUDIT_IGNORE
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -160,10 +161,12 @@ async def get_config(
 @router.put("/config")
 async def update_config(
     body: InvoiceConfigBody,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("editor")),
+    current_user: User = Depends(require_permission("editor")),
 ):
     cfg = await _get_config(db)
+    before = model_to_log_dict(cfg)
     cfg.line_items = [it.model_dump() for it in body.line_items]
     cfg.gst_type = body.gst_type
     cfg.igst_rate = body.igst_rate
@@ -171,6 +174,17 @@ async def update_config(
     cfg.sgst_rate = body.sgst_rate
     cfg.invoice_date = body.invoice_date
     cfg.bank_accounts = [b.model_dump() for b in body.bank_accounts][:2]
+    after = model_to_log_dict(cfg)
+    await log_action(
+        db,
+        current_user,
+        "update",
+        "invoice_config",
+        resource_id="1",
+        resource_label="Invoice configuration",
+        details={"changes": diff_fields(before, after)},
+        request=request,
+    )
     await db.commit()
     return {"ok": True}
 
@@ -530,13 +544,15 @@ async def get_invoice(
 async def upsert_invoice(
     party_key: str,
     body: InvoiceUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("editor")),
+    current_user: User = Depends(require_permission("editor")),
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
     fy = _cfg_fy(cfg)
     inv = await _ensure_record(party, cfg, db)
+    before = model_to_log_dict(inv, ignore=INVOICE_AUDIT_IGNORE)
 
     if body.invoice_no is not None:
         no = body.invoice_no.strip()
@@ -570,6 +586,21 @@ async def upsert_invoice(
     if body.amount_paid is not None:
         inv.amount_paid = body.amount_paid
 
+    after = model_to_log_dict(inv, ignore=INVOICE_AUDIT_IGNORE)
+    await log_action(
+        db,
+        current_user,
+        "update",
+        "invoice",
+        resource_id=str(inv.id),
+        resource_label=party.get("company_name") or party_key,
+        details={
+            "party_key": party_key,
+            "changes": diff_fields(before, after, ignore=INVOICE_AUDIT_IGNORE),
+            "fields_updated": list(body.model_dump(exclude_none=True).keys()),
+        },
+        request=request,
+    )
     await db.commit()
     await db.refresh(inv)
     default_no = await _default_invoice_no(party, inv, fy, db)
@@ -600,8 +631,9 @@ async def list_invoice_archives(
 async def download_invoice_archive(
     party_key: str,
     archive_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("viewer")),
+    current_user: User = Depends(require_permission("viewer")),
 ):
     party = await _party_for_key(party_key, db)
     archive = (await db.execute(
@@ -612,25 +644,49 @@ async def download_invoice_archive(
     inv = (await db.execute(select(Invoice).where(Invoice.id == archive.invoice_id))).scalar_one_or_none()
     if not inv or not _invoice_matches_party(inv, party):
         raise HTTPException(404, "Archived invoice not found")
+    await log_action(
+        db,
+        current_user,
+        "download",
+        "invoice",
+        resource_id=str(archive.id),
+        resource_label=archive.filename,
+        details={"party_key": party_key, "filename": archive.filename, "invoice_id": str(inv.id)},
+        request=request,
+    )
+    await db.commit()
     return _stream_pdf(archive.pdf_data, archive.filename)
 
 
 @router.post("/parties/{party_key}/pdf")
 async def invoice_pdf(
     party_key: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("viewer")),
+    current_user: User = Depends(require_permission("viewer")),
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
     filename, pdf = await _generate_and_stamp(party, cfg, db)
+    await log_action(
+        db,
+        current_user,
+        "generate",
+        "invoice",
+        resource_id=party_key,
+        resource_label=party.get("company_name") or party_key,
+        details={"filename": filename, "party_key": party_key},
+        request=request,
+    )
+    await db.commit()
     return _stream_pdf(pdf, filename)
 
 
 @router.post("/bulk-pdf")
 async def invoice_bulk(
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("can_download")),
+    current_user: User = Depends(require_permission("can_download")),
 ):
     cfg = await _get_config(db)
     parties = await _all_parties(db)
@@ -640,6 +696,15 @@ async def invoice_bulk(
             entries.append(await _generate_and_stamp(party, cfg, db))
         except Exception:
             pass
+    await log_action(
+        db,
+        current_user,
+        "generate",
+        "invoice",
+        details={"filename": "Invoices_Bulk.zip", "file_count": len(entries), "bulk": True},
+        request=request,
+    )
+    await db.commit()
     return _stream_zip(zip_pdfs(entries), "Invoices_Bulk.zip")
 
 
@@ -647,8 +712,9 @@ async def invoice_bulk(
 
 @router.get("/export")
 async def export_invoices(
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("can_download")),
+    current_user: User = Depends(require_permission("can_download")),
 ):
     cfg = await _get_config(db)
     fy = _cfg_fy(cfg)
@@ -674,6 +740,15 @@ async def export_invoices(
             "amount_paid": built.amount_paid,
         })
     data = build_invoice_export(rows, particular_names)
+    await log_action(
+        db,
+        current_user,
+        "export",
+        "invoice",
+        details={"filename": "Invoices.xlsx", "row_count": len(rows)},
+        request=request,
+    )
+    await db.commit()
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -683,9 +758,10 @@ async def export_invoices(
 
 @router.post("/import-zip")
 async def import_invoices_zip(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_permission("can_download")),
+    current_user: User = Depends(require_permission("can_download")),
 ):
     cfg = await _get_config(db)
     particular_names = [it.get("description", "") for it in (cfg.line_items or [])]
@@ -740,4 +816,13 @@ async def import_invoices_zip(
 
     summary = {"created": created, "updated": updated,
                "generated": len(entries) - (1 if errors else 0), "errors": len(errors)}
+    await log_action(
+        db,
+        current_user,
+        "import",
+        "invoice",
+        details={"filename": file.filename, **summary, "error_samples": errors[:20]},
+        request=request,
+    )
+    await db.commit()
     return _stream_zip(zip_pdfs(entries), "Invoices.zip", summary)
