@@ -52,6 +52,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     e.preventDefault();
     if (!isinEntered && !hasArn) { push("error", "Enter an ISIN code or an ARN number"); return; }
     if (isinEntered && !isinValid) { push("error", "ISIN must be exactly 12 alphanumeric characters"); return; }
+    if (form.nsdl_rta_code.trim() && !/RTAN/i.test(form.nsdl_rta_code)) { push("error", "NSDL RTA Code must contain \"RTAN\""); return; }
     setLoading(true);
     try {
       await api.companies.create({
@@ -119,11 +120,14 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
               </div>
               <div className="form-group">
                 <label className="form-label">NSDL RTA Code</label>
-                <input className="input" value={form.nsdl_rta_code} onChange={(e) => set("nsdl_rta_code", e.target.value)} />
+                <input className="input" value={form.nsdl_rta_code}
+                  onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, nsdl_rta_code: v, ...(v.trim() ? { has_nsdl_shares: true } : {}) })); }} />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>Must contain &quot;RTAN&quot;</div>
               </div>
               <div className="form-group">
                 <label className="form-label">CDSL RTA Code</label>
-                <input className="input" value={form.cdsl_rta_code} onChange={(e) => set("cdsl_rta_code", e.target.value)} />
+                <input className="input" value={form.cdsl_rta_code}
+                  onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, cdsl_rta_code: v, ...(v.trim() ? { has_cdsl_shares: true } : {}) })); }} />
               </div>
               <div className="form-group">
                 <label className="form-label">Security Type</label>

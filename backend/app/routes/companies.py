@@ -30,6 +30,14 @@ def _recalc_physical(company: Company) -> None:
         )
 
 
+def _sync_depository_flags(company: Company) -> None:
+    """A filled NSDL/CDSL RTA code marks the company as present in that depository."""
+    if (company.nsdl_rta_code or "").strip():
+        company.has_nsdl_shares = True
+    if (company.cdsl_rta_code or "").strip():
+        company.has_cdsl_shares = True
+
+
 def _apply_search(query, search: str | None):
     if not search:
         return query
@@ -205,6 +213,7 @@ async def ingest_excel(
                     if field not in ("isin_code", "arn_number") and value is not None:
                         setattr(existing, field, value)
                 _recalc_physical(existing)
+                _sync_depository_flags(existing)
                 existing.updated_at = datetime.now(timezone.utc)
                 existing.updated_by = current_user.id
                 updated += 1
@@ -215,6 +224,7 @@ async def ingest_excel(
                     updated_by=current_user.id,
                 )
                 _recalc_physical(company)
+                _sync_depository_flags(company)
                 db.add(company)
                 created += 1
 
@@ -243,6 +253,7 @@ async def create_company(
 
     company = Company(**body.model_dump(), created_by=current_user.id, updated_by=current_user.id)
     _recalc_physical(company)
+    _sync_depository_flags(company)
     db.add(company)
     await db.commit()
     await db.refresh(company)
@@ -321,6 +332,7 @@ async def update_company(
     for field, value in updates.items():
         setattr(company, field, value)
     _recalc_physical(company)
+    _sync_depository_flags(company)
 
     if not company.isin_code and not company.arn_number:
         raise HTTPException(

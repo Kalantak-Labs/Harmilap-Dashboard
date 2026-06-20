@@ -32,6 +32,18 @@ def _normalize_arn(v: str | None) -> str | None:
     return v or None
 
 
+def _validate_nsdl_rta(v: str | None) -> str | None:
+    """An NSDL RTA code must always contain the 'RTAN' substring."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if "RTAN" not in v.upper():
+        raise ValueError("NSDL RTA Code must contain 'RTAN'")
+    return v
+
+
 class CompanyBase(BaseModel):
     company_name: str | None = None
     isin_code: str | None = None
@@ -79,6 +91,11 @@ class CompanyCreate(CompanyBase):
     @classmethod
     def validate_shares(cls, v: int | None) -> int | None:
         return _non_negative(v)
+
+    @field_validator("nsdl_rta_code")
+    @classmethod
+    def validate_nsdl_rta(cls, v: str | None) -> str | None:
+        return _validate_nsdl_rta(v)
     @model_validator(mode="after")
     def require_isin_or_arn(self) -> "CompanyCreate":
         if not self.isin_code and not self.arn_number:
@@ -125,6 +142,11 @@ class CompanyUpdate(BaseModel):
     @classmethod
     def validate_arn(cls, v: str | None) -> str | None:
         return _normalize_arn(v)
+
+    @field_validator("nsdl_rta_code")
+    @classmethod
+    def validate_nsdl_rta(cls, v: str | None) -> str | None:
+        return _validate_nsdl_rta(v)
 
     # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
     @field_validator("total_shares", "nsdl_shares", "cdsl_shares")

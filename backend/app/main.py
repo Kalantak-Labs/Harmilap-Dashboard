@@ -31,6 +31,16 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS state VARCHAR(100)"
         ))
 
+        # companies: a filled NSDL/CDSL RTA code marks presence in that depository
+        await conn.execute(text(
+            "UPDATE companies SET has_nsdl_shares = TRUE "
+            "WHERE nsdl_rta_code IS NOT NULL AND nsdl_rta_code <> '' AND has_nsdl_shares = FALSE"
+        ))
+        await conn.execute(text(
+            "UPDATE companies SET has_cdsl_shares = TRUE "
+            "WHERE cdsl_rta_code IS NOT NULL AND cdsl_rta_code <> '' AND has_cdsl_shares = FALSE"
+        ))
+
         # invoices: track last PDF generation time
         await conn.execute(text(
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_generated_at TIMESTAMPTZ"

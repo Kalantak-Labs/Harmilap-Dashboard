@@ -60,6 +60,8 @@ export default function CompanyDetailPage() {
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = async () => {
+    const nsdl = (form.nsdl_rta_code ?? "").toString();
+    if (nsdl.trim() && !/RTAN/i.test(nsdl)) { push("error", "NSDL RTA Code must contain \"RTAN\""); return; }
     setSaving(true);
     try {
       const updated = await api.companies.update(id, {
