@@ -352,6 +352,11 @@ export interface PartyBillingItem {
   invoice_count: number;
 }
 
+export interface PartyBillingListResponse {
+  items: PartyBillingItem[];
+  total: number;
+}
+
 export interface PartyBillingSettings {
   party_key: string;
   company_name: string | null;

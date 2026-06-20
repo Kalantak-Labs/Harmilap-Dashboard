@@ -80,8 +80,11 @@ export default function BillingsPage() {
   const { push } = useToast();
   const router = useRouter();
   const [parties, setParties] = useState<PartyBillingItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [skip, setSkip] = useState(0);
+  const limit = 50;
   const [busy, setBusy] = useState<string | null>(null);
 
   const [settingsParty, setSettingsParty] = useState<PartyBillingItem | null>(null);
@@ -108,7 +111,13 @@ export default function BillingsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      setParties(await api.billings.listParties(search || undefined));
+      const res = await api.billings.listParties({
+        search: search || undefined,
+        skip,
+        limit,
+      });
+      setParties(res.items);
+      setTotal(res.total);
     } catch (e: unknown) {
       push("error", e instanceof Error ? e.message : "Failed to load billings");
     } finally {
@@ -119,7 +128,10 @@ export default function BillingsPage() {
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, skip]);
+
+  const totalPages = Math.ceil(total / limit);
+  const page = Math.floor(skip / limit);
 
   const openSettings = async (party: PartyBillingItem) => {
     setBusy(`settings:${party.party_key}`);
@@ -298,8 +310,13 @@ export default function BillingsPage() {
         <div style={{ position: "relative", maxWidth: 360 }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
           <input className="input" style={{ paddingLeft: 32 }} placeholder="Search company or RTA code…"
-            value={search} onChange={(e) => setSearch(e.target.value)} />
+            value={search} onChange={(e) => { setSearch(e.target.value); setSkip(0); }} />
         </div>
+        {!loading && (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+            {total.toLocaleString()} {total === 1 ? "company" : "companies"}
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ overflow: "hidden" }}>
@@ -354,6 +371,15 @@ export default function BillingsPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!loading && totalPages > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderTop: "1px solid var(--border)", fontSize: 13, color: "var(--text-secondary)" }}>
+            <span>Page {page + 1} of {totalPages}</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setSkip(Math.max(0, skip - limit))} disabled={skip === 0}>Previous</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setSkip(skip + limit)} disabled={page >= totalPages - 1}>Next</button>
+            </div>
+          </div>
         )}
       </div>
 

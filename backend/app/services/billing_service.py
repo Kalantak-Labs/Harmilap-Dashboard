@@ -40,7 +40,7 @@ def rep_score(c: Company) -> int:
     return sum(1 for f in fields if f)
 
 
-def isin_units(rows: list[Company]) -> int:
+def isin_units(rows) -> int:
     units = 0
     for r in rows:
         if not r.isin_code:
@@ -53,38 +53,146 @@ def party_key(c: Company) -> str | None:
     return c.nsdl_rta_code or c.cdsl_rta_code or None
 
 
-async def all_parties(db: AsyncSession) -> dict[str, dict]:
-    companies = (await db.execute(select(Company))).scalars().all()
-    groups: dict[str, list[Company]] = {}
-    for c in companies:
-        key = party_key(c)
-        if not key:
-            continue
-        groups.setdefault(key, []).append(c)
+async def list_parties_page(
+    db: AsyncSession,
+    search: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple[list[dict], int]:
+    """Paginated party list using SQL grouping — avoids loading all companies."""
+    party_key_expr = sql_func.coalesce(Company.nsdl_rta_code, Company.cdsl_rta_code)
+    base_where = or_(Company.nsdl_rta_code.isnot(None), Company.cdsl_rta_code.isnot(None))
+    filters = [base_where]
+    if search:
+        s = search.strip()
+        if s:
+            filters.append(
+                or_(
+                    Company.company_name.ilike(f"%{s}%"),
+                    Company.nsdl_rta_code.ilike(f"%{s}%"),
+                    Company.cdsl_rta_code.ilike(f"%{s}%"),
+                )
+            )
 
-    parties: dict[str, dict] = {}
-    for key, rows in groups.items():
-        rep = max(rows, key=rep_score)
-        nsdl = next((r.nsdl_rta_code for r in rows if r.nsdl_rta_code), None)
-        cdsl = next((r.cdsl_rta_code for r in rows if r.cdsl_rta_code), None)
-        parties[key] = {
-            "party_key": key,
-            "nsdl_rta_code": nsdl,
-            "cdsl_rta_code": cdsl,
-            "company_name": rep.company_name,
-            "pan_number": rep.pan_number,
-            "gst_number": rep.gst_number,
-            "billing_address": rep.billing_address,
-            "reg_address_line1": rep.reg_address_line1,
-            "reg_address_line2": rep.reg_address_line2,
-            "reg_address_line3": rep.reg_address_line3,
-            "reg_address_line4": rep.reg_address_line4,
-            "reg_city": rep.reg_city,
-            "reg_pin_code": rep.reg_pin_code,
-            "isins": sorted({r.isin_code for r in rows if r.isin_code}),
-            "isin_units": isin_units(rows),
-        }
-    return parties
+    total = int((await db.execute(
+        select(sql_func.count(sql_func.distinct(party_key_expr))).where(*filters)
+    )).scalar() or 0)
+
+    page_rows = (await db.execute(
+        select(
+            party_key_expr.label("party_key"),
+            sql_func.max(Company.company_name).label("company_name"),
+            sql_func.max(Company.nsdl_rta_code).label("nsdl_rta_code"),
+            sql_func.max(Company.cdsl_rta_code).label("cdsl_rta_code"),
+        )
+        .where(*filters)
+        .group_by(party_key_expr)
+        .order_by(sql_func.lower(sql_func.max(Company.company_name)).nulls_last(), party_key_expr)
+        .offset(skip)
+        .limit(limit)
+    )).all()
+
+    if not page_rows:
+        return [], total
+
+    keys = [row.party_key for row in page_rows]
+    company_rows = (await db.execute(
+        select(
+            Company.nsdl_rta_code,
+            Company.cdsl_rta_code,
+            Company.isin_code,
+            Company.has_nsdl_shares,
+            Company.has_cdsl_shares,
+        ).where(
+            base_where,
+            or_(Company.nsdl_rta_code.in_(keys), Company.cdsl_rta_code.in_(keys)),
+        )
+    )).all()
+
+    units_by_key: dict[str, list] = {}
+    for row in company_rows:
+        key = row.nsdl_rta_code or row.cdsl_rta_code
+        if key and key in keys:
+            units_by_key.setdefault(key, []).append(row)
+
+    parties: list[dict] = []
+    for row in page_rows:
+        rows = units_by_key.get(row.party_key, [])
+        parties.append({
+            "party_key": row.party_key,
+            "nsdl_rta_code": row.nsdl_rta_code,
+            "cdsl_rta_code": row.cdsl_rta_code,
+            "company_name": row.company_name,
+            "isin_units": isin_units(rows) if rows else 1,
+        })
+    return parties, total
+
+
+def _match_party_keys(
+    row_nsdl: str | None,
+    row_cdsl: str | None,
+    parties: dict[str, dict],
+    nsdl_to_keys: dict[str, list[str]],
+    cdsl_to_keys: dict[str, list[str]],
+) -> set[str]:
+    """Match billing rows to parties using the same OR logic as billing_invoice_conds."""
+    matched: set[str] = set()
+    if row_nsdl and row_nsdl in nsdl_to_keys:
+        for pk in nsdl_to_keys[row_nsdl]:
+            if parties[pk].get("nsdl_rta_code") == row_nsdl:
+                matched.add(pk)
+    if row_cdsl and row_cdsl in cdsl_to_keys:
+        for pk in cdsl_to_keys[row_cdsl]:
+            if parties[pk].get("cdsl_rta_code") == row_cdsl:
+                matched.add(pk)
+    return matched
+
+
+async def bulk_party_billing_stats(
+    parties: dict[str, dict],
+    db: AsyncSession,
+) -> dict[str, dict]:
+    """Aggregate billed/received/outstanding for all parties in two DB queries."""
+    stats: dict[str, dict] = {
+        key: {"total_billed": 0.0, "total_received": 0.0, "outstanding": 0.0, "invoice_count": 0}
+        for key in parties
+    }
+    if not parties:
+        return stats
+
+    nsdl_to_keys: dict[str, list[str]] = {}
+    cdsl_to_keys: dict[str, list[str]] = {}
+    for key, party in parties.items():
+        if party.get("nsdl_rta_code"):
+            nsdl_to_keys.setdefault(party["nsdl_rta_code"], []).append(key)
+        if party.get("cdsl_rta_code"):
+            cdsl_to_keys.setdefault(party["cdsl_rta_code"], []).append(key)
+
+    inv_rows = (await db.execute(
+        select(BillingInvoice.nsdl_rta_code, BillingInvoice.cdsl_rta_code, BillingInvoice.grand_total)
+    )).all()
+    for inv_nsdl, inv_cdsl, total in inv_rows:
+        matched = _match_party_keys(inv_nsdl, inv_cdsl, parties, nsdl_to_keys, cdsl_to_keys)
+        amount = float(total or 0)
+        for pk in matched:
+            stats[pk]["total_billed"] += amount
+            stats[pk]["invoice_count"] += 1
+
+    pay_rows = (await db.execute(
+        select(BillingPayment.nsdl_rta_code, BillingPayment.cdsl_rta_code, BillingPayment.amount)
+    )).all()
+    for pay_nsdl, pay_cdsl, amount in pay_rows:
+        matched = _match_party_keys(pay_nsdl, pay_cdsl, parties, nsdl_to_keys, cdsl_to_keys)
+        amt = float(amount or 0)
+        for pk in matched:
+            stats[pk]["total_received"] += amt
+
+    for pk in stats:
+        stats[pk]["total_billed"] = round(stats[pk]["total_billed"], 2)
+        stats[pk]["total_received"] = round(stats[pk]["total_received"], 2)
+        stats[pk]["outstanding"] = round(stats[pk]["total_billed"] - stats[pk]["total_received"], 2)
+
+    return stats
 
 
 async def party_for_key(party_key: str, db: AsyncSession) -> dict:

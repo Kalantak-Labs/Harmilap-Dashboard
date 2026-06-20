@@ -338,9 +338,13 @@ export const api = {
     getConfig: () => request<import("./types").InvoiceConfig>("/billings/config"),
     updateConfig: (body: object) =>
       request<{ ok: boolean }>("/billings/config", { method: "PUT", body: JSON.stringify(body) }),
-    listParties: (search?: string) => {
-      const q = search ? `?search=${encodeURIComponent(search)}` : "";
-      return request<import("./types").PartyBillingItem[]>(`/billings/parties${q}`);
+    listParties: (params?: { search?: string; skip?: number; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.search) qs.set("search", params.search);
+      if (params?.skip != null) qs.set("skip", String(params.skip));
+      if (params?.limit != null) qs.set("limit", String(params.limit));
+      const q = qs.toString();
+      return request<import("./types").PartyBillingListResponse>(`/billings/parties${q ? `?${q}` : ""}`);
     },
     getSettings: (partyKey: string) =>
       request<import("./types").PartyBillingSettings>(`/billings/parties/${encodeURIComponent(partyKey)}/settings`),

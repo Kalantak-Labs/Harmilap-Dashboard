@@ -15,6 +15,7 @@ from app.schemas.billing import (
     BillingConfigOut,
     BillingConfigUpdate,
     PartyBillingListOut,
+    PartyBillingListResponse,
     PartySettingsOut,
     PartySettingsUpdate,
     PartySummaryOut,
@@ -27,7 +28,6 @@ from app.schemas.billing import (
 from app.schemas.invoice import Particular
 from app.services.action_log import log_action
 from app.services.billing_service import (
-    all_parties,
     party_for_key,
     get_config,
     get_or_create_party_settings,
@@ -35,6 +35,8 @@ from app.services.billing_service import (
     merge_particulars,
     grand_total,
     party_financials,
+    list_parties_page,
+    bulk_party_billing_stats,
     billing_invoice_conds,
     billing_payment_conds,
     invoice_no_taken,
@@ -103,42 +105,38 @@ async def update_billing_config(
     return {"ok": True}
 
 
-@router.get("/parties", response_model=list[PartyBillingListOut])
+@router.get("/parties", response_model=PartyBillingListResponse)
 async def list_billing_parties(
     search: str | None = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("viewer")),
 ):
-    parties = await all_parties(db)
-    out: list[PartyBillingListOut] = []
-    for party in parties.values():
-        if search:
-            s = search.lower()
-            hay = " ".join(filter(None, [
-                party["party_key"], party.get("company_name"),
-                party.get("nsdl_rta_code"), party.get("cdsl_rta_code"),
-            ])).lower()
-            if s not in hay:
-                continue
-        fin = await party_financials(party, db)
-        inv_conds = billing_invoice_conds(party)
-        inv_count = 0
-        if inv_conds:
-            inv_count = len((await db.execute(
-                select(BillingInvoice.id).where(or_(*inv_conds))
-            )).scalars().all())
-        out.append(PartyBillingListOut(
+    page, total = await list_parties_page(
+        db,
+        search=search.strip() if search else None,
+        skip=skip,
+        limit=limit,
+    )
+    parties_dict = {p["party_key"]: p for p in page}
+    stats_map = await bulk_party_billing_stats(parties_dict, db)
+    items: list[PartyBillingListOut] = []
+    for party in page:
+        fin = stats_map[party["party_key"]]
+        items.append(PartyBillingListOut(
             party_key=party["party_key"],
             nsdl_rta_code=party.get("nsdl_rta_code"),
             cdsl_rta_code=party.get("cdsl_rta_code"),
             company_name=party.get("company_name"),
             isin_count=party.get("isin_units", 1),
-            isins=party.get("isins", []),
-            invoice_count=inv_count,
-            **fin,
+            isins=[],
+            invoice_count=fin["invoice_count"],
+            total_billed=fin["total_billed"],
+            total_received=fin["total_received"],
+            outstanding=fin["outstanding"],
         ))
-    out.sort(key=lambda p: (p.company_name or p.party_key).lower())
-    return out
+    return PartyBillingListResponse(items=items, total=total)
 
 
 @router.get("/parties/{party_key}/settings", response_model=PartySettingsOut)

@@ -40,6 +40,11 @@ class PartyBillingListOut(BaseModel):
     invoice_count: int = 0
 
 
+class PartyBillingListResponse(BaseModel):
+    items: list[PartyBillingListOut]
+    total: int
+
+
 class PartySettingsOut(BaseModel):
     party_key: str
     company_name: str | None = None
