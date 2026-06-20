@@ -6,7 +6,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Harmilap RTA",
+  title: "Harmilap Share Transfer Agents",
   description: "Harmilap Share Transfer Agents — Office Management System",
 };
 
