@@ -2,7 +2,7 @@ import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator
 
 # All Indian States + Union Territories (single-select dropdown values)
 INDIAN_STATES_UTS = [
@@ -32,8 +32,8 @@ def _non_negative(v: int | None) -> int | None:
 def _validate_face_value(v: float | None) -> float | None:
     if v is None:
         return None
-    if v % 10 != 0:
-        raise ValueError("Face value must be a multiple of 10")
+    if v <= 0:
+        raise ValueError("Face value must be greater than 0")
     return v
 
 
@@ -133,7 +133,54 @@ def _validate_nsdl_rta(v: str | None) -> str | None:
     return v
 
 
-class CompanyBase(BaseModel):
+def _has_text(value: str | None) -> bool:
+    return bool(value and str(value).strip())
+
+
+def _has_nonempty_items(items: list[str] | None) -> bool:
+    if not items:
+        return False
+    return any(s and str(s).strip() for s in items)
+
+
+def validate_company_write_required(company) -> None:
+    """Mandatory fields for create/update. Not applied on read."""
+    errors: list[str] = []
+
+    if not _has_text(company.isin_code) and not _has_text(company.arn_number):
+        errors.append("Either an ISIN code or an ARN number is required")
+    if not _has_text(company.nsdl_rta_code) and not _has_text(company.cdsl_rta_code):
+        errors.append("Either an NSDL RTA code, a CDSL RTA code, or both is required")
+    if not _has_text(company.gst_number) and not _has_text(company.pan_number):
+        errors.append("Either a GST number, a PAN number, or both is required")
+    if not _has_nonempty_items(company.email_ids):
+        errors.append("At least one email is required")
+    if not _has_nonempty_items(company.contact_numbers):
+        errors.append("At least one contact number is required")
+    if not _has_text(company.authorized_person_name):
+        errors.append("Authorized person name is required")
+    if not _has_text(company.authorized_person_designation):
+        errors.append("Authorized person designation is required")
+    if not _has_text(company.reg_address_line1):
+        errors.append("Registered address line 1 is required")
+    if not _has_text(company.reg_address_line2):
+        errors.append("Registered address line 2 is required")
+    if not _has_text(company.reg_pin_code):
+        errors.append("Pin code is required")
+    if not _has_text(company.state):
+        errors.append("State is required")
+    if not _has_text(company.reg_city):
+        errors.append("City is required")
+    if company.total_shares is None:
+        errors.append("Total shares is required")
+    if company.face_value is None:
+        errors.append("Face value is required")
+
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
+class CompanyFields(BaseModel):
     company_name: str | None = None
     isin_code: str | None = None
     arn_number: str | None = None
@@ -164,8 +211,10 @@ class CompanyBase(BaseModel):
     cdsl_shares: int | None = None
     physical_shares: int | None = None
 
-    # Format validators run on BOTH read and write — the DB is cleaned so every
-    # stored value is valid or null (see the startup cleanup migration).
+
+class _CompanyWriteValidators:
+    """Format validators — applied on create/update payloads only, not on read."""
+
     @field_validator("isin_code")
     @classmethod
     def validate_isin(cls, v: str | None) -> str | None:
@@ -207,21 +256,15 @@ class CompanyBase(BaseModel):
         return _validate_face_value(v)
 
 
-class CompanyCreate(CompanyBase):
+class CompanyCreate(CompanyFields, _CompanyWriteValidators):
     # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
     @field_validator("total_shares", "nsdl_shares", "cdsl_shares")
     @classmethod
     def validate_shares(cls, v: int | None) -> int | None:
         return _non_negative(v)
 
-    @model_validator(mode="after")
-    def require_isin_or_arn(self) -> "CompanyCreate":
-        if not self.isin_code and not self.arn_number:
-            raise ValueError("Either an ISIN code or an ARN number is required")
-        return self
 
-
-class CompanyUpdate(BaseModel):
+class CompanyUpdate(_CompanyWriteValidators, BaseModel):
     company_name: str | None = None
     isin_code: str | None = None
     arn_number: str | None = None
@@ -251,46 +294,6 @@ class CompanyUpdate(BaseModel):
     cdsl_shares: int | None = None
     physical_shares: int | None = None
 
-    @field_validator("isin_code")
-    @classmethod
-    def validate_isin(cls, v: str | None) -> str | None:
-        return _validate_isin(v)
-
-    @field_validator("arn_number")
-    @classmethod
-    def validate_arn(cls, v: str | None) -> str | None:
-        return _normalize_arn(v)
-
-    @field_validator("nsdl_rta_code")
-    @classmethod
-    def validate_nsdl_rta(cls, v: str | None) -> str | None:
-        return _validate_nsdl_rta(v)
-
-    @field_validator("gst_number")
-    @classmethod
-    def validate_gst(cls, v: str | None) -> str | None:
-        return _validate_gst(v)
-
-    @field_validator("pan_number")
-    @classmethod
-    def validate_pan(cls, v: str | None) -> str | None:
-        return _validate_pan(v)
-
-    @field_validator("reg_pin_code")
-    @classmethod
-    def validate_pincode(cls, v: str | None) -> str | None:
-        return _validate_pincode(v)
-
-    @field_validator("state")
-    @classmethod
-    def validate_state(cls, v: str | None) -> str | None:
-        return _validate_state(v)
-
-    @field_validator("face_value")
-    @classmethod
-    def validate_face_value(cls, v: float | None) -> float | None:
-        return _validate_face_value(v)
-
     # physical_shares is derived (total − NSDL − CDSL) server-side, so it is not validated here.
     @field_validator("total_shares", "nsdl_shares", "cdsl_shares")
     @classmethod
@@ -298,7 +301,7 @@ class CompanyUpdate(BaseModel):
         return _non_negative(v)
 
 
-class CompanyOut(CompanyBase):
+class CompanyOut(CompanyFields):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime

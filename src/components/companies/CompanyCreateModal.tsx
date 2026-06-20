@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
+import FaceValueField from "@/components/companies/FaceValueField";
 import { securityTypeFromISIN } from "@/lib/isin";
 import { INDIAN_STATES_UTS } from "@/lib/constants";
 
@@ -21,7 +22,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     gst_number: "", tan_number: "", pan_number: "",
     reg_address_line1: "", reg_address_line2: "", reg_address_line3: "", reg_address_line4: "",
     reg_city: "", state: "", reg_pin_code: "", billing_address: "",
-    security_type: "", face_value: "",
+    security_type: "", face_value: null as number | null,
     total_shares: "", has_nsdl_shares: false, nsdl_shares: "",
     has_cdsl_shares: false, cdsl_shares: "", physical_shares: "",
   });
@@ -54,12 +55,12 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
     if (!isinEntered && !hasArn) { push("error", "Enter an ISIN code or an ARN number"); return; }
     if (isinEntered && !isinValid) { push("error", "ISIN must be exactly 12 alphanumeric characters"); return; }
     if (form.nsdl_rta_code.trim() && !/RTAN/i.test(form.nsdl_rta_code)) { push("error", "NSDL RTA Code must contain \"RTAN\""); return; }
-    if (form.face_value && Number(form.face_value) % 10 !== 0) { push("error", "Face value must be a multiple of 10"); return; }
+    if (form.face_value == null) { push("error", "Face value is required"); return; }
     setLoading(true);
     try {
       await api.companies.create({
         ...form,
-        face_value: form.face_value ? Number(form.face_value) : null,
+        face_value: form.face_value,
         total_shares: form.total_shares ? Number(form.total_shares) : null,
         nsdl_shares: form.nsdl_shares ? Number(form.nsdl_shares) : null,
         cdsl_shares: form.cdsl_shares ? Number(form.cdsl_shares) : null,
@@ -86,7 +87,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Core</div>
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label">ISIN Code</label>
+                <label className="form-label required">ISIN Code</label>
                 <input
                   className="input"
                   value={form.isin_code}
@@ -105,7 +106,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 )}
               </div>
               <div className="form-group">
-                <label className="form-label">ARN Number</label>
+                <label className="form-label required">ARN Number</label>
                 <input
                   className="input"
                   value={form.arn_number}
@@ -121,13 +122,13 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <input className="input" value={form.company_name} onChange={(e) => set("company_name", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">NSDL RTA Code</label>
+                <label className="form-label required">NSDL RTA Code</label>
                 <input className="input" value={form.nsdl_rta_code}
                   onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, nsdl_rta_code: v, ...(v.trim() ? { has_nsdl_shares: true } : {}) })); }} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>Must contain &quot;RTAN&quot;</div>
               </div>
               <div className="form-group">
-                <label className="form-label">CDSL RTA Code</label>
+                <label className="form-label required">CDSL RTA Code</label>
                 <input className="input" value={form.cdsl_rta_code}
                   onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, cdsl_rta_code: v, ...(v.trim() ? { has_cdsl_shares: true } : {}) })); }} />
               </div>
@@ -146,29 +147,31 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 )}
               </div>
               <div className="form-group">
-                <label className="form-label">Face Value (₹)</label>
-                <input className="input" type="number" min="0" step="10" value={form.face_value ?? ""} onChange={(e) => set("face_value", e.target.value)} />
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>Must be a multiple of 10</div>
+                <label className="form-label required">Face Value (₹)</label>
+                <FaceValueField
+                  value={form.face_value}
+                  onChange={(v) => set("face_value", v)}
+                />
               </div>
             </div>
 
             <hr className="divider" />
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Contact</div>
             <div className="form-group">
-              <label className="form-label">Email IDs</label>
+              <label className="form-label required">Email IDs</label>
               <ArrayFieldEditor values={form.email_ids} onChange={(v) => set("email_ids", v)} placeholder="email@example.com" inputType="email" />
             </div>
             <div className="form-group">
-              <label className="form-label">Contact Numbers</label>
+              <label className="form-label required">Contact Numbers</label>
               <ArrayFieldEditor values={form.contact_numbers} onChange={(v) => set("contact_numbers", v)} placeholder="+91 XXXXX XXXXX" inputType="tel" />
             </div>
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label">Authorized Person</label>
+                <label className="form-label required">Authorized Person</label>
                 <input className="input" value={form.authorized_person_name} onChange={(e) => set("authorized_person_name", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">Designation</label>
+                <label className="form-label required">Designation</label>
                 <input className="input" value={form.authorized_person_designation} onChange={(e) => set("authorized_person_designation", e.target.value)} />
               </div>
             </div>
@@ -177,7 +180,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Tax & Legal</div>
             <div className="grid-3">
               <div className="form-group">
-                <label className="form-label">GST Number</label>
+                <label className="form-label required">GST Number</label>
                 <input className="input" value={form.gst_number} onChange={(e) => set("gst_number", e.target.value)} />
               </div>
               <div className="form-group">
@@ -185,7 +188,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <input className="input" value={form.tan_number} onChange={(e) => set("tan_number", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">PAN Number</label>
+                <label className="form-label required">PAN Number</label>
                 <input className="input" value={form.pan_number} onChange={(e) => set("pan_number", e.target.value)} />
               </div>
             </div>
@@ -194,11 +197,11 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Registered Address</div>
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label">Line 1</label>
+                <label className="form-label required">Line 1</label>
                 <input className="input" value={form.reg_address_line1} onChange={(e) => set("reg_address_line1", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">Line 2</label>
+                <label className="form-label required">Line 2</label>
                 <input className="input" value={form.reg_address_line2} onChange={(e) => set("reg_address_line2", e.target.value)} />
               </div>
               <div className="form-group">
@@ -210,18 +213,18 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
                 <input className="input" value={form.reg_address_line4} onChange={(e) => set("reg_address_line4", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">City</label>
+                <label className="form-label required">City</label>
                 <input className="input" value={form.reg_city} onChange={(e) => set("reg_city", e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">State</label>
+                <label className="form-label required">State</label>
                 <select className="input" value={form.state} onChange={(e) => set("state", e.target.value)}>
                   <option value="">Select state / UT…</option>
                   {INDIAN_STATES_UTS.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Pin Code</label>
+                <label className="form-label required">Pin Code</label>
                 <input className="input" value={form.reg_pin_code} onChange={(e) => set("reg_pin_code", e.target.value)} />
               </div>
             </div>
@@ -234,7 +237,7 @@ export default function CompanyCreateModal({ onClose, onCreated }: Props) {
             <div style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--text-muted)", marginBottom: 2 }}>Share Details</div>
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label">Total Shares</label>
+                <label className="form-label required">Total Shares</label>
                 <input className="input" type="number" min="0" value={form.total_shares} onChange={(e) => set("total_shares", e.target.value)} />
               </div>
               <div className="form-group">

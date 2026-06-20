@@ -8,21 +8,23 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import ArrayFieldEditor from "@/components/ui/ArrayFieldEditor";
+import FaceValueField from "@/components/companies/FaceValueField";
 import type { Company } from "@/lib/types";
+import { formatFaceValue } from "@/lib/faceValue";
 import { securityTypeFromISIN } from "@/lib/isin";
 import { INDIAN_STATES_UTS } from "@/lib/constants";
 
 type EditState = Partial<Company> & {
-  face_value?: string | number | null;
+  face_value?: number | null;
   total_shares?: string | number | null;
   nsdl_shares?: string | number | null;
   cdsl_shares?: string | number | null;
   physical_shares?: string | number | null;
 };
 
-const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
+const Field = ({ label, value, required }: { label: string; value: React.ReactNode; required?: boolean }) => (
   <>
-    <div className="detail-label">{label}</div>
+    <div className={`detail-label${required ? " required" : ""}`}>{label}</div>
     <div className="detail-value">{value ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
   </>
 );
@@ -63,12 +65,12 @@ export default function CompanyDetailPage() {
   const save = async () => {
     const nsdl = (form.nsdl_rta_code ?? "").toString();
     if (nsdl.trim() && !/RTAN/i.test(nsdl)) { push("error", "NSDL RTA Code must contain \"RTAN\""); return; }
-    if (form.face_value != null && String(form.face_value) !== "" && Number(form.face_value) % 10 !== 0) { push("error", "Face value must be a multiple of 10"); return; }
+    if (form.face_value == null) { push("error", "Face value is required"); return; }
     setSaving(true);
     try {
       const updated = await api.companies.update(id, {
         ...form,
-        face_value: form.face_value != null && String(form.face_value) !== "" ? Number(form.face_value) : null,
+        face_value: form.face_value,
         total_shares: form.total_shares != null && String(form.total_shares) !== "" ? Number(form.total_shares) : null,
         nsdl_shares: form.nsdl_shares != null && String(form.nsdl_shares) !== "" ? Number(form.nsdl_shares) : null,
         cdsl_shares: form.cdsl_shares != null && String(form.cdsl_shares) !== "" ? Number(form.cdsl_shares) : null,
@@ -189,68 +191,74 @@ export default function CompanyDetailPage() {
         {/* Section: Core */}
         <div className="detail-grid">
           <div className="detail-section-title">Core Information</div>
-          <Field label="ISIN Code" value={editing
+          <Field label="ISIN Code" required={editing} value={editing
             ? inp("isin_code")
             : company.isin_code
               ? <code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.isin_code}</code>
               : null}
           />
-          <Field label="ARN Number" value={editing
+          <Field label="ARN Number" required={editing} value={editing
             ? inp("arn_number")
             : company.arn_number
               ? <code style={{ fontSize: 13, background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{company.arn_number}</code>
               : null}
           />
           <Field label="Company Name" value={editing ? inp("company_name") : company.company_name} />
-          <Field label="NSDL RTA Code" value={editing ? inp("nsdl_rta_code") : company.nsdl_rta_code} />
-          <Field label="CDSL RTA Code" value={editing ? inp("cdsl_rta_code") : company.cdsl_rta_code} />
+          <Field label="NSDL RTA Code" required={editing} value={editing ? inp("nsdl_rta_code") : company.nsdl_rta_code} />
+          <Field label="CDSL RTA Code" required={editing} value={editing ? inp("cdsl_rta_code") : company.cdsl_rta_code} />
           <Field label="Security Type" value={editing ? inp("security_type") : company.security_type ? <span className="badge badge-gray">{company.security_type}</span> : null} />
-          <Field label="Face Value" value={editing ? inp("face_value", "number") : company.face_value != null ? `₹${company.face_value}` : null} />
+          <Field label="Face Value" required={editing} value={editing
+            ? <FaceValueField
+                value={form.face_value ?? null}
+                onChange={(v) => set("face_value", v)}
+                inputClassName="input input-sm"
+              />
+            : company.face_value != null ? `₹${formatFaceValue(company.face_value)}` : null} />
         </div>
 
         {/* Section: Contact */}
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Contact</div>
-          <Field label="Email IDs" value={editing
+          <Field label="Email IDs" required={editing} value={editing
             ? <ArrayFieldEditor values={(form.email_ids as string[]) ?? []} onChange={(v) => set("email_ids", v)} placeholder="email@example.com" inputType="email" />
             : company.email_ids?.length
               ? <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{company.email_ids.map((e, i) => <span key={i}>{e}</span>)}</div>
               : null}
           />
-          <Field label="Contact Numbers" value={editing
+          <Field label="Contact Numbers" required={editing} value={editing
             ? <ArrayFieldEditor values={(form.contact_numbers as string[]) ?? []} onChange={(v) => set("contact_numbers", v)} placeholder="+91 XXXXX XXXXX" inputType="tel" />
             : company.contact_numbers?.length
               ? <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{company.contact_numbers.map((n, i) => <span key={i}>{n}</span>)}</div>
               : null}
           />
-          <Field label="Authorized Person" value={editing ? inp("authorized_person_name") : company.authorized_person_name} />
-          <Field label="Designation" value={editing ? inp("authorized_person_designation") : company.authorized_person_designation} />
+          <Field label="Authorized Person" required={editing} value={editing ? inp("authorized_person_name") : company.authorized_person_name} />
+          <Field label="Designation" required={editing} value={editing ? inp("authorized_person_designation") : company.authorized_person_designation} />
         </div>
 
         {/* Section: Tax & Legal */}
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Tax & Legal</div>
-          <Field label="GST Number" value={editing ? inp("gst_number") : company.gst_number} />
+          <Field label="GST Number" required={editing} value={editing ? inp("gst_number") : company.gst_number} />
           <Field label="TAN Number" value={editing ? inp("tan_number") : company.tan_number} />
-          <Field label="PAN Number" value={editing ? inp("pan_number") : company.pan_number} />
+          <Field label="PAN Number" required={editing} value={editing ? inp("pan_number") : company.pan_number} />
           <Field label="PAN Holder Type" value={company.pan_holder_type ? <span className="badge badge-gray">{company.pan_holder_type}</span> : null} />
         </div>
 
         {/* Section: Registered Address */}
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Registered Address</div>
-          <Field label="Line 1" value={editing ? inp("reg_address_line1") : company.reg_address_line1} />
-          <Field label="Line 2" value={editing ? inp("reg_address_line2") : company.reg_address_line2} />
+          <Field label="Line 1" required={editing} value={editing ? inp("reg_address_line1") : company.reg_address_line1} />
+          <Field label="Line 2" required={editing} value={editing ? inp("reg_address_line2") : company.reg_address_line2} />
           <Field label="Line 3" value={editing ? inp("reg_address_line3") : company.reg_address_line3} />
           <Field label="Line 4" value={editing ? inp("reg_address_line4") : company.reg_address_line4} />
-          <Field label="City" value={editing ? inp("reg_city") : company.reg_city} />
-          <Field label="State" value={editing ? (
+          <Field label="City" required={editing} value={editing ? inp("reg_city") : company.reg_city} />
+          <Field label="State" required={editing} value={editing ? (
             <select className="input input-sm" value={(form.state as string) ?? ""} onChange={(e) => set("state", e.target.value)}>
               <option value="">Select state / UT…</option>
               {INDIAN_STATES_UTS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           ) : company.state} />
-          <Field label="Pin Code" value={editing ? inp("reg_pin_code") : company.reg_pin_code} />
+          <Field label="Pin Code" required={editing} value={editing ? inp("reg_pin_code") : company.reg_pin_code} />
           <Field label="Complete Address" value={(() => {
             const s = editing ? form : company;
             const parts = [s.reg_address_line1, s.reg_address_line2, s.reg_address_line3, s.reg_address_line4, s.reg_city, s.state, s.reg_pin_code]
@@ -270,7 +278,7 @@ export default function CompanyDetailPage() {
         {/* Section: Share Details */}
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Share Details</div>
-          <Field label="Total Shares" value={editing ? inp("total_shares", "number") : company.total_shares?.toLocaleString()} />
+          <Field label="Total Shares" required={editing} value={editing ? inp("total_shares", "number") : company.total_shares?.toLocaleString()} />
           <Field label="Physical Shares (auto)" value={editing
             ? <span style={{ color: "var(--text-muted)" }}>
                 {(Number(form.total_shares || 0) - Number(form.nsdl_shares || 0) - Number(form.cdsl_shares || 0)).toLocaleString()}

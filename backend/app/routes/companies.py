@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func, delete
 
@@ -17,6 +16,7 @@ from app.models.user import User
 from app.schemas.company import (
     CompanyCreate, CompanyUpdate, CompanyOut, CompanyListOut, IngestResult, CompanyStats,
     _validate_isin,
+    validate_company_write_required,
 )
 from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES
 from app.services.excel import parse_excel, build_export_excel
@@ -277,6 +277,10 @@ async def create_company(
     _recalc_physical(company)
     _sync_depository_flags(company)
     _derive_company_info(company)
+    try:
+        validate_company_write_required(company)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     db.add(company)
     await db.commit()
     await db.refresh(company)
@@ -357,12 +361,10 @@ async def update_company(
     _recalc_physical(company)
     _sync_depository_flags(company)
     _derive_company_info(company)
-
-    if not company.isin_code and not company.arn_number:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A company must have either an ISIN code or an ARN number",
-        )
+    try:
+        validate_company_write_required(company)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     company.updated_at = datetime.now(timezone.utc)
     company.updated_by = current_user.id
