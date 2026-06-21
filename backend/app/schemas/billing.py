@@ -65,6 +65,7 @@ class BillingInvoiceOut(BaseModel):
     grand_total: float
     filename: str
     generated_at: datetime
+    is_manual: bool = False
 
     model_config = {"from_attributes": True}
 

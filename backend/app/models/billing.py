@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import String, Float, Date, DateTime, JSON, UniqueConstraint, Index, ForeignKey
+from sqlalchemy import String, Float, Date, DateTime, JSON, UniqueConstraint, Index, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +48,7 @@ class BillingInvoice(Base):
     cgst_rate: Mapped[float] = mapped_column(Float, nullable=False, default=9.0)
     sgst_rate: Mapped[float] = mapped_column(Float, nullable=False, default=9.0)
     grand_total: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     s3_key: Mapped[str] = mapped_column(String(512), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     generated_at: Mapped[datetime] = mapped_column(

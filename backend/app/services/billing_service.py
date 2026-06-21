@@ -301,6 +301,25 @@ def billing_payment_conds(party: dict):
     return conds
 
 
+def invoice_matches_party(inv: BillingInvoice, party: dict) -> bool:
+    if party.get("nsdl_rta_code") and inv.nsdl_rta_code == party["nsdl_rta_code"]:
+        return True
+    if party.get("cdsl_rta_code") and inv.cdsl_rta_code == party["cdsl_rta_code"]:
+        return True
+    return False
+
+
+async def validate_invoice_deletion(party: dict, inv: BillingInvoice, db: AsyncSession) -> None:
+    """Block delete when payments received would exceed remaining billed total."""
+    fin = await party_financials(party, db)
+    new_billed = round(fin["total_billed"] - inv.grand_total, 2)
+    if new_billed + 0.01 < fin["total_received"]:
+        raise ValueError(
+            f"Cannot delete: payments received ({fin['total_received']}) would exceed "
+            f"remaining billed ({new_billed})"
+        )
+
+
 async def party_financials(party: dict, db: AsyncSession) -> dict:
     inv_conds = billing_invoice_conds(party)
     pay_conds = billing_payment_conds(party)

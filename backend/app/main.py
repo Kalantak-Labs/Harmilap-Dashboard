@@ -105,6 +105,11 @@ async def lifespan(app: FastAPI):
             ") WHERE isin_code IS NOT NULL AND char_length(trim(isin_code)) >= 9"
         ))
 
+        # billing_invoices: manual upload flag
+        await conn.execute(text(
+            "ALTER TABLE billing_invoices ADD COLUMN IF NOT EXISTS is_manual BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+
         # companies: a filled NSDL/CDSL RTA code marks presence in that depository
         await conn.execute(text(
             "UPDATE companies SET has_nsdl_shares = TRUE "

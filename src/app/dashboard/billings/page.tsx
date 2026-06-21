@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Settings, LayoutList, X, Plus, Trash2, Check, Download, Receipt,
+  Search, Settings, LayoutList, X, Plus, Trash2, Check, Download, Receipt, Upload,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -108,6 +108,17 @@ export default function BillingsPage() {
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [recordingPay, setRecordingPay] = useState(false);
 
+  const [manualNo, setManualNo] = useState("");
+  const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10));
+  const [manualAmount, setManualAmount] = useState("");
+  const [manualGeneratedOn, setManualGeneratedOn] = useState(new Date().toISOString().slice(0, 10));
+  const [manualPdf, setManualPdf] = useState<File | null>(null);
+  const [manualNoError, setManualNoError] = useState<string | null>(null);
+  const [addingManual, setAddingManual] = useState(false);
+  const manualFileRef = useRef<HTMLInputElement>(null);
+
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -178,6 +189,14 @@ export default function BillingsPage() {
     setDefaultInvoiceNo(null);
     setPayAmount("");
     setPayRef("");
+    setManualNo("");
+    setManualDate(new Date().toISOString().slice(0, 10));
+    setManualAmount("");
+    setManualGeneratedOn(new Date().toISOString().slice(0, 10));
+    setManualPdf(null);
+    setManualNoError(null);
+    setDeleteConfirmId(null);
+    if (manualFileRef.current) manualFileRef.current.value = "";
     try {
       const data = await refreshSummary(party.party_key);
       const defaultNo = await api.billings.checkInvoiceNo("", party.party_key, invoiceDate);
@@ -226,6 +245,29 @@ export default function BillingsPage() {
       .catch(() => {});
   }, [invoiceDate, summaryParty?.party_key, loadingSummary]);
 
+  const validateManualNo = useCallback(async (no: string, partyKey: string, date: string) => {
+    const trimmed = no.trim();
+    if (!trimmed) { setManualNoError("Invoice number is required"); return; }
+    try {
+      const result = await api.billings.checkInvoiceNo(trimmed, partyKey, date);
+      if (!result.available) {
+        setManualNoError(`Invoice number "${trimmed}" is already in use.`);
+      } else {
+        setManualNoError(null);
+      }
+    } catch {
+      setManualNoError(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!summaryParty || loadingSummary) return;
+    const t = setTimeout(() => {
+      validateManualNo(manualNo, summaryParty.party_key, manualDate);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [manualNo, manualDate, summaryParty, loadingSummary, validateManualNo]);
+
   const generateInvoice = async () => {
     if (!summaryParty || invoiceNoError) return;
     const trimmed = invoiceNo.trim();
@@ -258,6 +300,53 @@ export default function BillingsPage() {
       push("error", e instanceof Error ? e.message : "Download failed");
     } finally {
       setBusy(null);
+    }
+  };
+
+  const deleteInvoice = async (inv: BillingInvoiceRecord) => {
+    if (!summaryParty) return;
+    setBusy(`del:${inv.id}`);
+    try {
+      await api.billings.deleteInvoice(inv.id);
+      push("success", `Invoice ${inv.invoice_no} deleted`);
+      setDeleteConfirmId(null);
+      await refreshSummary(summaryParty.party_key);
+      load();
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const addManualInvoice = async () => {
+    if (!summaryParty || manualNoError) return;
+    const trimmed = manualNo.trim();
+    const amount = Number(manualAmount);
+    if (!trimmed) { push("error", "Invoice number is required"); return; }
+    if (!amount || amount <= 0) { push("error", "Enter a valid amount"); return; }
+    if (!manualPdf) { push("error", "PDF file is required"); return; }
+    setAddingManual(true);
+    try {
+      await api.billings.addManualInvoice(summaryParty.party_key, {
+        invoice_no: trimmed,
+        invoice_date: manualDate,
+        amount,
+        generated_on: manualGeneratedOn,
+        file: manualPdf,
+      });
+      push("success", `Manual bill ${trimmed} added`);
+      setManualNo("");
+      setManualAmount("");
+      setManualPdf(null);
+      setManualNoError(null);
+      if (manualFileRef.current) manualFileRef.current.value = "";
+      await refreshSummary(summaryParty.party_key);
+      load();
+    } catch (e: unknown) {
+      push("error", e instanceof Error ? e.message : "Failed to add manual bill");
+    } finally {
+      setAddingManual(false);
     }
   };
 
@@ -482,6 +571,43 @@ export default function BillingsPage() {
                   </div>
                 )}
 
+                {can("editor") && (
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14, marginBottom: 20 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 10 }}>Add Manual Bill</div>
+                    <div className="grid-2" style={{ marginBottom: 10 }}>
+                      <div className="form-group">
+                        <label className="form-label">Invoice Number</label>
+                        <input className="input" value={manualNo} onChange={(e) => setManualNo(e.target.value)}
+                          style={manualNoError ? { borderColor: "var(--danger)" } : undefined} />
+                        {manualNoError && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{manualNoError}</div>}
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Invoice Date</label>
+                        <input className="input" type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Amount</label>
+                        <input className="input" type="number" min="0" step="0.01" value={manualAmount}
+                          onChange={(e) => setManualAmount(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Generated On</label>
+                        <input className="input" type="date" value={manualGeneratedOn}
+                          onChange={(e) => setManualGeneratedOn(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 10 }}>
+                      <label className="form-label">Invoice PDF</label>
+                      <input ref={manualFileRef} className="input" type="file" accept="application/pdf,.pdf"
+                        onChange={(e) => setManualPdf(e.target.files?.[0] ?? null)} />
+                    </div>
+                    <button className="btn btn-secondary" onClick={addManualInvoice}
+                      disabled={addingManual || !!manualNoError || !manualPdf}>
+                      {addingManual ? <span className="spinner" /> : <Upload size={14} />} Add Manual Bill
+                    </button>
+                  </div>
+                )}
+
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>Invoice History</div>
                 {summary.invoices.length === 0 ? (
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>No invoices generated yet</div>
@@ -499,16 +625,41 @@ export default function BillingsPage() {
                     <tbody>
                       {summary.invoices.map((inv) => (
                         <tr key={inv.id}>
-                          <td>{inv.invoice_no}</td>
+                          <td>
+                            {inv.invoice_no}
+                            {inv.is_manual && (
+                              <span className="badge badge-gray" style={{ marginLeft: 6, fontSize: 10 }}>Manual</span>
+                            )}
+                          </td>
                           <td>{fmtDate(inv.invoice_date)}</td>
                           <td>{inr(inv.grand_total)}</td>
                           <td style={{ fontSize: 12 }}>{fmtDate(inv.generated_at)}</td>
                           <td>
-                            <button className="btn btn-ghost btn-icon btn-sm" title="Redownload"
-                              disabled={busy === `dl:${inv.id}`}
-                              onClick={() => downloadInvoice(inv)}>
-                              {busy === `dl:${inv.id}` ? <span className="spinner" /> : <Download size={14} />}
-                            </button>
+                            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                              <button className="btn btn-ghost btn-icon btn-sm" title="Redownload"
+                                disabled={busy === `dl:${inv.id}`}
+                                onClick={() => downloadInvoice(inv)}>
+                                {busy === `dl:${inv.id}` ? <span className="spinner" /> : <Download size={14} />}
+                              </button>
+                              {can("editor") && (
+                                deleteConfirmId === inv.id ? (
+                                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                    <button className="btn btn-danger btn-sm" style={{ fontSize: 11 }}
+                                      disabled={busy === `del:${inv.id}`}
+                                      onClick={() => deleteInvoice(inv)}>
+                                      {busy === `del:${inv.id}` ? <span className="spinner" /> : "Confirm"}
+                                    </button>
+                                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
+                                      onClick={() => setDeleteConfirmId(null)}>Cancel</button>
+                                  </div>
+                                ) : (
+                                  <button className="btn btn-ghost btn-icon btn-sm" title="Delete invoice"
+                                    onClick={() => setDeleteConfirmId(inv.id)}>
+                                    <Trash2 size={14} />
+                                  </button>
+                                )
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}

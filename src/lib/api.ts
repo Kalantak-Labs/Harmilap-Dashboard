@@ -365,6 +365,26 @@ export const api = {
         `/billings/parties/${encodeURIComponent(partyKey)}/invoices`,
         { method: "POST", body: JSON.stringify(body) },
       ),
+    addManualInvoice: async (partyKey: string, data: {
+      invoice_no: string;
+      invoice_date: string;
+      amount: number;
+      generated_on: string;
+      file: File;
+    }) => {
+      const form = new FormData();
+      form.append("invoice_no", data.invoice_no);
+      form.append("invoice_date", data.invoice_date);
+      form.append("amount", String(data.amount));
+      form.append("generated_on", data.generated_on);
+      form.append("file", data.file);
+      return request<import("./types").BillingInvoiceRecord>(
+        `/billings/parties/${encodeURIComponent(partyKey)}/invoices/manual`,
+        { method: "POST", body: form },
+      );
+    },
+    deleteInvoice: (invoiceId: string) =>
+      request<{ ok: boolean }>(`/billings/invoices/${invoiceId}`, { method: "DELETE" }),
     downloadInvoice: async (invoiceId: string, filename: string) => {
       const token = localStorage.getItem("access_token");
       const res = await fetch(`${BASE}/billings/invoices/${invoiceId}/pdf`, {

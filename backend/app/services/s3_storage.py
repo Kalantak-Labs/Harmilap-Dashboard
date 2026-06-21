@@ -52,3 +52,16 @@ def download_pdf(key: str) -> bytes:
 def invoice_s3_key(invoice_id: str, filename: str) -> str:
     safe_name = filename.replace("/", "_")
     return f"billings/{invoice_id}/{safe_name}"
+
+
+def delete_pdf(key: str) -> None:
+    """Remove a PDF from S3. Ignores missing objects so DB cleanup can proceed."""
+    if not key or key == "pending":
+        return
+    client = _client()
+    if not client:
+        return
+    try:
+        client.delete_object(Bucket=settings.aws_s3_bucket, Key=key)
+    except ClientError as exc:
+        logger.warning("S3 delete failed for %s: %s", key, exc)

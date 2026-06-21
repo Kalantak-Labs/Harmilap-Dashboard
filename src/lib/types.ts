@@ -373,6 +373,7 @@ export interface BillingInvoiceRecord {
   grand_total: number;
   filename: string;
   generated_at: string;
+  is_manual: boolean;
 }
 
 export interface BillingPaymentRecord {
