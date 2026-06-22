@@ -63,6 +63,8 @@ class BillingInvoiceOut(BaseModel):
     invoice_date: date
     fiscal_year: str
     grand_total: float
+    isin_total: int | None = None
+    billed_isin_count: int | None = None
     filename: str
     generated_at: datetime
     is_manual: bool = False
@@ -97,6 +99,7 @@ class PartySummaryOut(BaseModel):
 class GenerateInvoiceBody(BaseModel):
     invoice_no: str
     invoice_date: date
+    billed_isin_count: int | None = None  # ISINs to bill; defaults to all active
 
 
 class InvoiceNoCheck(BaseModel):

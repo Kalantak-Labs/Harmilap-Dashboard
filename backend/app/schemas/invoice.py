@@ -21,7 +21,8 @@ class PartyListOut(BaseModel):
     nsdl_rta_code: str | None = None
     cdsl_rta_code: str | None = None
     company_name: str | None = None
-    isin_count: int = 0  # chargeable units — an ISIN in both NSDL & CDSL counts as 2
+    isin_count: int = 0  # total chargeable units — an ISIN in both NSDL & CDSL counts as 2
+    billed_isin_count: int = 0  # ISINs actually billed (defaults to total)
     isins: list[str] = []
     invoice_no: str | None = None
     grand_total: float = 0
@@ -42,7 +43,8 @@ class InvoiceOut(BaseModel):
     gst_number: str | None = None
     billing_address: str | None = None
     isins: list[str] = []
-    isin_count: int = 0  # chargeable units — an ISIN in both NSDL & CDSL counts as 2
+    isin_count: int = 0  # total chargeable units — an ISIN in both NSDL & CDSL counts as 2
+    billed_isin_count: int = 0  # ISINs actually billed (defaults to total)
     particulars: list[Particular] = []
     gst_type: str = "IGST"
     igst_rate: float = 18.0
@@ -67,6 +69,7 @@ class InvoiceUpdate(BaseModel):
     sgst_rate: float | None = None
     invoice_no: str | None = None
     invoice_date: date | None = None
+    billed_isin_count: int | None = None
     payment_status: bool | None = None
     payment_date: date | None = None
     amount_paid: float | None = None

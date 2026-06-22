@@ -130,6 +130,19 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_date DATE"
         ))
 
+        # invoices: manual billed-ISIN override
+        await conn.execute(text(
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS billed_isin_count INTEGER"
+        ))
+
+        # billing invoices: total/billed ISIN counts
+        await conn.execute(text(
+            "ALTER TABLE billing_invoices ADD COLUMN IF NOT EXISTS isin_total INTEGER"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE billing_invoices ADD COLUMN IF NOT EXISTS billed_isin_count INTEGER"
+        ))
+
         # ── Referential integrity: beneficiaries / benpos_lockin → companies ──
         for _tbl in ("beneficiaries", "benpos_lockin"):
             await conn.execute(text(f"ALTER TABLE {_tbl} ADD COLUMN IF NOT EXISTS company_id UUID"))

@@ -205,7 +205,7 @@ export const api = {
       a.click();
     },
 
-    pdfUrl:  (partyKey: string) => `${BASE}/invoices/parties/${encodeURIComponent(partyKey)}/pdf`,
+    pdfUrl:  (partyKey: string, billed?: number) => `${BASE}/invoices/parties/${encodeURIComponent(partyKey)}/pdf${billed ? `?billed=${billed}` : ""}`,
     bulkUrl: ()                 => `${BASE}/invoices/bulk-pdf`,
 
     // Authenticated GET blob download (Excel export)
@@ -360,7 +360,7 @@ export const api = {
       if (invoiceDate) qs.set("invoice_date", invoiceDate);
       return request<{ available: boolean; default_invoice_no: string | null }>(`/billings/check-invoice-no?${qs}`);
     },
-    generateInvoice: (partyKey: string, body: { invoice_no: string; invoice_date: string }) =>
+    generateInvoice: (partyKey: string, body: { invoice_no: string; invoice_date: string; billed_isin_count?: number }) =>
       request<import("./types").BillingInvoiceRecord>(
         `/billings/parties/${encodeURIComponent(partyKey)}/invoices`,
         { method: "POST", body: JSON.stringify(body) },

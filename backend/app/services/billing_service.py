@@ -363,7 +363,16 @@ async def default_invoice_no(party: dict, invoice_date: date, db: AsyncSession) 
         seq += 1
 
 
-def company_dict_for_pdf(party: dict) -> dict:
+def effective_billed(party: dict, billed: int | None) -> int:
+    """ISINs to bill: explicit value when given (>0), else all active ISIN units."""
+    total = party.get("isin_units", 1)
+    if billed is not None and billed > 0:
+        return billed
+    return total
+
+
+def company_dict_for_pdf(party: dict, billed: int | None = None) -> dict:
+    total = party.get("isin_units", 1)
     return {
         "company_name": party.get("company_name"),
         "gst_number": party.get("gst_number"),
@@ -378,7 +387,8 @@ def company_dict_for_pdf(party: dict) -> dict:
         "nsdl_rta_code": party.get("nsdl_rta_code"),
         "cdsl_rta_code": party.get("cdsl_rta_code"),
         "isins": party.get("isins", []),
-        "isin_units": party.get("isin_units", 1),
+        "isin_total": total,
+        "isin_billed": effective_billed(party, billed),
     }
 
 
@@ -388,8 +398,9 @@ def generate_pdf_bytes(
     particulars: list[dict],
     invoice_no: str,
     invoice_date: date,
+    billed: int | None = None,
 ) -> bytes:
-    units = party.get("isin_units", 1)
+    units = effective_billed(party, billed)
     line_items = []
     for p in particulars:
         d = dict(p)
@@ -405,7 +416,7 @@ def generate_pdf_bytes(
         "bank_accounts": getattr(cfg, "bank_accounts", None) or [],
     }
     return generate_invoice_pdf(
-        company_dict_for_pdf(party), config, invoice_no, invoice_date
+        company_dict_for_pdf(party, billed), config, invoice_no, invoice_date
     )
 
 

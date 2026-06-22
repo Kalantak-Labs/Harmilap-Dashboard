@@ -323,6 +323,13 @@ async def _next_invoice_no(party: dict, fy: str, db: AsyncSession) -> str:
     return f"{_party_code(party)}/{seq}"
 
 
+def _effective_billed(inv: Optional[Invoice], total_units: int) -> int:
+    """ISINs to bill: the manual override when set (>0), otherwise all active ISINs."""
+    if inv is not None and inv.billed_isin_count and inv.billed_isin_count > 0:
+        return inv.billed_isin_count
+    return total_units
+
+
 def _build_out(
     party: dict,
     inv: Optional[Invoice],
@@ -330,6 +337,7 @@ def _build_out(
     default_invoice_no: str | None = None,
 ) -> InvoiceOut:
     units = party.get("isin_units", 1)
+    billed = _effective_billed(inv, units)
     if inv:
         particulars = inv.particulars or []
         gst_type, igst, cgst, sgst = inv.gst_type, inv.igst_rate, inv.cgst_rate, inv.sgst_rate
@@ -354,6 +362,7 @@ def _build_out(
         billing_address=party.get("billing_address"),
         isins=party.get("isins", []),
         isin_count=units,
+        billed_isin_count=billed,
         particulars=[Particular(**p) for p in particulars],
         gst_type=gst_type, igst_rate=igst, cgst_rate=cgst, sgst_rate=sgst,
         invoice_no=invoice_no,
@@ -362,11 +371,11 @@ def _build_out(
         fiscal_year=fy,
         payment_status=pay_status, payment_date=pay_date, amount_paid=amt_paid,
         last_generated_at=last_gen,
-        grand_total=_grand_total(particulars, gst_type, igst, cgst, sgst, units),
+        grand_total=_grand_total(particulars, gst_type, igst, cgst, sgst, billed),
     )
 
 
-def _company_dict_for_pdf(party: dict) -> dict:
+def _company_dict_for_pdf(party: dict, total_units: int, billed_units: int) -> dict:
     return {
         "company_name": party.get("company_name"),
         "gst_number": party.get("gst_number"),
@@ -381,20 +390,22 @@ def _company_dict_for_pdf(party: dict) -> dict:
         "nsdl_rta_code": party.get("nsdl_rta_code"),
         "cdsl_rta_code": party.get("cdsl_rta_code"),
         "isins": party.get("isins", []),
-        "isin_units": party.get("isin_units", 1),
+        "isin_total": total_units,    # all active ISIN units
+        "isin_billed": billed_units,  # ISINs actually billed
     }
 
 
 def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
     out = _build_out(party, inv, cfg)
-    units = party.get("isin_units", 1)
-    # Taxable amounts are per-ISIN — scale by chargeable units. Non-taxable
+    total_units = party.get("isin_units", 1)
+    billed = _effective_billed(inv, total_units)
+    # Taxable amounts are per-ISIN — scale by the BILLED ISIN count. Non-taxable
     # (actual expenses / out-of-pocket) are flat and left as entered.
     line_items = []
     for p in out.particulars:
         d = p.model_dump()
         if not d.get("non_taxable"):
-            d["amount"] = (d.get("amount") or 0) * units
+            d["amount"] = (d.get("amount") or 0) * billed
         line_items.append(d)
     config = {
         "line_items": line_items,
@@ -404,7 +415,7 @@ def _pdf_for(party: dict, inv: Optional[Invoice], cfg: InvoiceConfig) -> bytes:
     }
     inv_no = out.invoice_no or f"{_party_code(party)}/1"
     inv_date = _resolve_invoice_date(inv, cfg)
-    return generate_invoice_pdf(_company_dict_for_pdf(party), config, inv_no, inv_date)
+    return generate_invoice_pdf(_company_dict_for_pdf(party, total_units, billed), config, inv_no, inv_date)
 
 
 async def _ensure_record(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> Invoice:
@@ -427,9 +438,13 @@ async def _ensure_record(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> I
     return inv
 
 
-async def _generate_and_stamp(party: dict, cfg: InvoiceConfig, db: AsyncSession) -> tuple[str, bytes]:
+async def _generate_and_stamp(
+    party: dict, cfg: InvoiceConfig, db: AsyncSession, billed: int | None = None
+) -> tuple[str, bytes]:
     """Persist the invoice (number + last_generated_at), archive PDF, and return it."""
     inv = await _ensure_record(party, cfg, db)
+    if billed is not None and billed > 0:
+        inv.billed_isin_count = billed
     inv.last_generated_at = datetime.now(timezone.utc)
     pdf = _pdf_for(party, inv, cfg)
     label = party.get("company_name") or party["party_key"]
@@ -493,6 +508,7 @@ async def list_parties(
             cdsl_rta_code=party.get("cdsl_rta_code"),
             company_name=party.get("company_name"),
             isin_count=party.get("isin_units", 1),
+            billed_isin_count=built.billed_isin_count,
             isins=party.get("isins", []),
             invoice_no=built.invoice_no,
             grand_total=built.grand_total,
@@ -568,6 +584,8 @@ async def upsert_invoice(
 
     if body.invoice_date is not None:
         inv.invoice_date = body.invoice_date
+    if body.billed_isin_count is not None:
+        inv.billed_isin_count = body.billed_isin_count if body.billed_isin_count > 0 else None
 
     if body.particulars is not None:
         inv.particulars = [p.model_dump() for p in body.particulars]
@@ -662,12 +680,13 @@ async def download_invoice_archive(
 async def invoice_pdf(
     party_key: str,
     request: Request,
+    billed: int | None = Query(None, ge=1, description="ISINs to bill (defaults to all active)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("viewer")),
 ):
     cfg = await _get_config(db)
     party = await _party_for_key(party_key, db)
-    filename, pdf = await _generate_and_stamp(party, cfg, db)
+    filename, pdf = await _generate_and_stamp(party, cfg, db, billed=billed)
     await log_action(
         db,
         current_user,

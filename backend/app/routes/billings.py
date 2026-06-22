@@ -279,10 +279,13 @@ async def generate_invoice(
         raise HTTPException(400, "At least one billing particular must be enabled")
 
     from app.services.pdf_generator import current_fy
+    from app.services.billing_service import effective_billed
     fy = current_fy(body.invoice_date)
+    total_units = party.get("isin_units", 1)
+    billed = effective_billed(party, body.billed_isin_count)
     total = grand_total(
         particulars, cfg.gst_type, cfg.igst_rate, cfg.cgst_rate, cfg.sgst_rate,
-        party.get("isin_units", 1),
+        billed,
     )
     label = party.get("company_name") or party_key
     filename = f"Invoice_{label}_{invoice_no.replace('/', '-')}.pdf"
@@ -299,6 +302,8 @@ async def generate_invoice(
         cgst_rate=cfg.cgst_rate,
         sgst_rate=cfg.sgst_rate,
         grand_total=total,
+        isin_total=total_units,
+        billed_isin_count=billed,
         is_manual=False,
         s3_key="pending",
         filename=filename,
@@ -307,7 +312,7 @@ async def generate_invoice(
     db.add(inv)
     await db.flush()
 
-    pdf = generate_pdf_bytes(party, cfg, particulars, invoice_no, body.invoice_date)
+    pdf = generate_pdf_bytes(party, cfg, particulars, invoice_no, body.invoice_date, billed)
     key = invoice_s3_key(str(inv.id), filename)
     try:
         upload_pdf(key, pdf)

@@ -186,7 +186,8 @@ export interface PartyListItem {
   nsdl_rta_code: string | null;
   cdsl_rta_code: string | null;
   company_name: string | null;
-  isin_count: number; // chargeable units — an ISIN in both NSDL & CDSL counts as 2
+  isin_count: number; // total chargeable units — an ISIN in both NSDL & CDSL counts as 2
+  billed_isin_count: number; // ISINs actually billed (defaults to total)
   isins: string[];
   invoice_no: string | null;
   grand_total: number;
@@ -207,7 +208,8 @@ export interface Invoice {
   gst_number: string | null;
   billing_address: string | null;
   isins: string[];
-  isin_count: number; // chargeable units
+  isin_count: number; // total chargeable units
+  billed_isin_count: number; // ISINs actually billed (defaults to total)
   particulars: Particular[];
   gst_type: "IGST" | "CGST_SGST";
   igst_rate: number;
@@ -232,6 +234,7 @@ export interface InvoiceUpdate {
   sgst_rate?: number;
   invoice_no?: string | null;
   invoice_date?: string | null;
+  billed_isin_count?: number | null;
   payment_status?: boolean;
   payment_date?: string | null;
   amount_paid?: number | null;
@@ -371,6 +374,8 @@ export interface BillingInvoiceRecord {
   invoice_date: string;
   fiscal_year: string;
   grand_total: number;
+  isin_total: number | null;
+  billed_isin_count: number | null;
   filename: string;
   generated_at: string;
   is_manual: boolean;

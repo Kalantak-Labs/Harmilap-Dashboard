@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import String, Boolean, Float, Date, DateTime, JSON, UniqueConstraint, Index
+from sqlalchemy import String, Boolean, Float, Integer, Date, DateTime, JSON, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,8 @@ class Invoice(Base):
     invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     fiscal_year: Mapped[str] = mapped_column(String(7), nullable=False)
+    # Number of ISINs actually billed (manual override; null = bill all active ISINs)
+    billed_isin_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Payment tracking
     payment_status: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

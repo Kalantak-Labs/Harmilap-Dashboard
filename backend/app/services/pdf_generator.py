@@ -854,10 +854,17 @@ def generate_invoice_pdf(
     story.append(billrow)
     story.append(SP(4))
 
-    # No. of Active ISINs
+    # No. of ISINs — total active vs. actually billed
     isins = [i for i in (company.get("isins") or []) if i]
-    isin_count = company.get("isin_units") or len(isins) or 1
-    story.append(P(f"<b>No. of Active ISINs:</b> &nbsp;{isin_count}", _s("isn", "Helvetica-Bold", 9, 12)))
+    total_isins = company.get("isin_total") or company.get("isin_units") or len(isins) or 1
+    billed_isins = company.get("isin_billed") or total_isins
+    s_isn = _s("isn", "Helvetica-Bold", 9, 12)
+    story.append(P(
+        f"<b>Total Active ISINs:</b> &nbsp;{total_isins}"
+        f"&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+        f"<b>ISINs Billed:</b> &nbsp;{billed_isins}",
+        s_isn,
+    ))
     story.append(SP(4))
 
     # ── 5. Services table (single, with Taxability column) ─────────────────────

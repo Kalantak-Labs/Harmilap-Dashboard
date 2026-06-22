@@ -97,6 +97,7 @@ export default function BillingsPage() {
 
   const [invoiceNo, setInvoiceNo] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [billedCount, setBilledCount] = useState<number | "">("");
   const [invoiceNoError, setInvoiceNoError] = useState<string | null>(null);
   const [defaultInvoiceNo, setDefaultInvoiceNo] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -187,6 +188,7 @@ export default function BillingsPage() {
     setInvoiceNo("");
     setInvoiceNoError(null);
     setDefaultInvoiceNo(null);
+    setBilledCount(party.isin_count || 1);
     setPayAmount("");
     setPayRef("");
     setManualNo("");
@@ -277,6 +279,7 @@ export default function BillingsPage() {
       await api.billings.generateInvoice(summaryParty.party_key, {
         invoice_no: trimmed,
         invoice_date: invoiceDate,
+        billed_isin_count: billedCount === "" ? undefined : Number(billedCount),
       });
       push("success", `Invoice ${trimmed} generated`);
       const data = await refreshSummary(summaryParty.party_key);
@@ -562,6 +565,14 @@ export default function BillingsPage() {
                           </button>
                         )}
                         {invoiceNoError && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{invoiceNoError}</div>}
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">ISINs to bill</label>
+                        <input className="input" type="number" min={1} value={billedCount}
+                          onChange={(e) => setBilledCount(e.target.value === "" ? "" : Math.max(1, Number(e.target.value)))} />
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                          Total active ISIN units: <b>{summaryParty.isin_count}</b> — amount is multiplied by this
+                        </div>
                       </div>
                     </div>
                     <button className="btn btn-primary" onClick={generateInvoice}
