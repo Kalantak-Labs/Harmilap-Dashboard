@@ -5,6 +5,8 @@ import { Download, FileText, Search, X, RefreshCw, Calendar } from "lucide-react
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import type { CompanyListItem } from "@/lib/types";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { filtersToParam, activeFilterCount, type ColFilters } from "@/lib/filters";
 
 type ReportType = "benpos" | "reconciliation";
 
@@ -48,9 +50,15 @@ export default function ReportsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [colFilters, setColFilters] = useState<ColFilters>({});
   const [skip, setSkip] = useState(0);
   const limit = 50;
   const [generating, setGenerating] = useState<string | null>(null);
+
+  const setCol = (key: string, val: string) => { setColFilters((p) => ({ ...p, [key]: val })); setSkip(0); };
+  const colF = (key: string, label: string) => (
+    <ColumnFilter label={label} value={colFilters[key] ?? ""} onChange={(v) => setCol(key, v)} />
+  );
 
   // Reconciliation modal state
   const [reconModal, setReconModal] = useState<{
@@ -71,6 +79,8 @@ export default function ReportsPage() {
     try {
       const p: Record<string, string | number> = { skip, limit };
       if (search) p.search = search;
+      const fp = filtersToParam(colFilters);
+      if (fp) p.filters = fp;
       const [list, cnt] = await Promise.all([
         api.companies.list(p),
         api.companies.count(p),
@@ -84,7 +94,8 @@ export default function ReportsPage() {
     }
   };
 
-  useEffect(() => { load(); }, [search, skip]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [search, JSON.stringify(colFilters), skip]);
 
   const generate = async (type: ReportType, companyId: string, isin: string, company?: CompanyListItem) => {
     if (type === "reconciliation") {
@@ -324,8 +335,8 @@ export default function ReportsPage() {
             onChange={(e) => { setSearch(e.target.value); setSkip(0); }}
           />
         </div>
-        {search && (
-          <button className="btn btn-ghost btn-sm" onClick={() => setSearch("")}><X size={13} /> Clear</button>
+        {(search || activeFilterCount(colFilters) > 0) && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(""); setColFilters({}); setSkip(0); }}><X size={13} /> Clear</button>
         )}
         <button className="btn btn-ghost btn-sm btn-icon" onClick={load}><RefreshCw size={14} /></button>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>{total} companies</span>
@@ -337,9 +348,9 @@ export default function ReportsPage() {
           <table>
             <thead>
               <tr>
-                <th>Company</th>
-                <th>ISIN</th>
-                <th>Security Type</th>
+                <th>Company{colF("company_name", "Company")}</th>
+                <th>ISIN{colF("isin_arn", "ISIN")}</th>
+                <th>Security Type{colF("security_type", "Security Type")}</th>
                 <th style={{ textAlign: "center" }}>BENPOS</th>
                 <th style={{ textAlign: "center" }}>Reconciliation</th>
               </tr>

@@ -338,9 +338,10 @@ export const api = {
     getConfig: () => request<import("./types").InvoiceConfig>("/billings/config"),
     updateConfig: (body: object) =>
       request<{ ok: boolean }>("/billings/config", { method: "PUT", body: JSON.stringify(body) }),
-    listParties: (params?: { search?: string; skip?: number; limit?: number }) => {
+    listParties: (params?: { search?: string; filters?: string; skip?: number; limit?: number }) => {
       const qs = new URLSearchParams();
       if (params?.search) qs.set("search", params.search);
+      if (params?.filters) qs.set("filters", params.filters);
       if (params?.skip != null) qs.set("skip", String(params.skip));
       if (params?.limit != null) qs.set("limit", String(params.limit));
       const q = qs.toString();
@@ -365,9 +366,10 @@ export const api = {
         `/billings/parties/${encodeURIComponent(partyKey)}/invoices`,
         { method: "POST", body: JSON.stringify(body) },
       ),
-    exportInvoices: async () => {
+    exportInvoices: async (filters?: string) => {
       const token = localStorage.getItem("access_token");
-      const res = await fetch(`${BASE}/billings/export`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const url = `${BASE}/billings/export${filters ? `?filters=${encodeURIComponent(filters)}` : ""}`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
       const a = document.createElement("a");

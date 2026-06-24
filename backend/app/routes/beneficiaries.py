@@ -18,6 +18,7 @@ from app.services.benpos_parser import parse_benpos_file
 from app.services.cdsl_parser import is_rt02, parse_rt95, parse_rt02
 from app.services.excel import build_beneficiary_export
 from app.services.action_log import log_action
+from app.utils.filters import apply_column_filters
 from app.dependencies import require_permission
 
 router = APIRouter(prefix="/beneficiaries", tags=["beneficiaries"])
@@ -59,10 +60,27 @@ def _search_filter(query, search: str | None):
     )
 
 
+# Whitelisted per-column filters (Excel-style header filters)
+BENEFICIARY_FILTERS = {
+    "first_holder_name": ("text", [Beneficiary.first_holder_name]),
+    "isin_code": ("text", [Beneficiary.isin_code]),
+    "depository": ("text", [Beneficiary.depository]),
+    "dp_id": ("text", [Beneficiary.dp_id]),
+    "client_id": ("text", [Beneficiary.client_id]),
+    "first_holder_pan": ("text", [Beneficiary.first_holder_pan]),
+    "beneficiary_type": ("text", [Beneficiary.beneficiary_type]),
+    "free_positions": ("text", [Beneficiary.free_positions]),
+    "lockin_positions": ("text", [Beneficiary.lockin_positions]),
+    "pledged_positions": ("text", [Beneficiary.pledged_positions]),
+    "record_date": ("text", [Beneficiary.record_date]),
+}
+
+
 @router.get("/", response_model=list[BeneficiaryListOut])
 async def list_beneficiaries(
     isin_code: str | None = Query(None),
     search: str | None = Query(None),
+    filters: str | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     current_user: User = Depends(require_permission("viewer")),
@@ -72,6 +90,7 @@ async def list_beneficiaries(
     if isin_code:
         query = query.where(Beneficiary.isin_code == isin_code)
     query = _search_filter(query, search)
+    query = apply_column_filters(query, filters, BENEFICIARY_FILTERS)
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
@@ -81,6 +100,7 @@ async def list_beneficiaries(
 async def count_beneficiaries(
     isin_code: str | None = Query(None),
     search: str | None = Query(None),
+    filters: str | None = Query(None),
     current_user: User = Depends(require_permission("viewer")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -88,6 +108,7 @@ async def count_beneficiaries(
     if isin_code:
         query = query.where(Beneficiary.isin_code == isin_code)
     query = _search_filter(query, search)
+    query = apply_column_filters(query, filters, BENEFICIARY_FILTERS)
     result = await db.execute(query)
     return {"count": result.scalar()}
 
@@ -97,6 +118,7 @@ async def export_beneficiaries(
     request: Request,
     isin_code: str | None = Query(None),
     search: str | None = Query(None),
+    filters: str | None = Query(None),
     current_user: User = Depends(require_permission("can_download")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -104,6 +126,7 @@ async def export_beneficiaries(
     if isin_code:
         query = query.where(Beneficiary.isin_code == isin_code)
     query = _search_filter(query, search)
+    query = apply_column_filters(query, filters, BENEFICIARY_FILTERS)
     result = await db.execute(query)
     beneficiaries = result.scalars().all()
 

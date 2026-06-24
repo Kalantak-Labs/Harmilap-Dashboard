@@ -12,6 +12,8 @@ import type {
   PartyBillingItem, PartyBillingSettings, PartyBillingSummary,
   Particular, BillingInvoiceRecord,
 } from "@/lib/types";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { filtersToParam, type ColFilters } from "@/lib/filters";
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const fmtDate = (s: string | null) =>
@@ -89,7 +91,13 @@ export default function BillingsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [colFilters, setColFilters] = useState<ColFilters>({});
   const [skip, setSkip] = useState(0);
+
+  const setCol = (key: string, val: string) => { setColFilters((p) => ({ ...p, [key]: val })); setSkip(0); };
+  const colF = (key: string, label: string) => (
+    <ColumnFilter label={label} value={colFilters[key] ?? ""} onChange={(v) => setCol(key, v)} />
+  );
   const limit = 50;
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -131,6 +139,7 @@ export default function BillingsPage() {
     try {
       const res = await api.billings.listParties({
         search: search || undefined,
+        filters: filtersToParam(colFilters),
         skip,
         limit,
       });
@@ -146,7 +155,8 @@ export default function BillingsPage() {
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [search, skip]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, JSON.stringify(colFilters), skip]);
 
   const totalPages = Math.ceil(total / limit);
   const page = Math.floor(skip / limit);
@@ -411,7 +421,7 @@ export default function BillingsPage() {
         <div style={{ display: "flex", gap: 8 }}>
           {can("can_download") && (
             <button className="btn btn-secondary" onClick={async () => {
-              try { await api.billings.exportInvoices(); } catch (e: unknown) { push("error", e instanceof Error ? e.message : "Export failed"); }
+              try { await api.billings.exportInvoices(filtersToParam(colFilters)); } catch (e: unknown) { push("error", e instanceof Error ? e.message : "Export failed"); }
             }}>
               <Download size={14} /> Export Invoices
             </button>
@@ -444,8 +454,8 @@ export default function BillingsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Company</th>
-                <th>RTA Codes</th>
+                <th>Company{colF("company_name", "Company")}</th>
+                <th>RTA Codes{colF("rta_code", "RTA Code")}</th>
                 <th>ISIN Units</th>
                 <th>Total Billed</th>
                 <th>Outstanding</th>

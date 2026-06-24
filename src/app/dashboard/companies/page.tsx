@@ -7,6 +7,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
 import type { CompanyListItem, IngestResult } from "@/lib/types";
 import CompanyCreateModal from "@/components/companies/CompanyCreateModal";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { filtersToParam, activeFilterCount, type ColFilters } from "@/lib/filters";
 
 export default function CompaniesPage() {
   const { can } = useAuth();
@@ -19,8 +21,14 @@ export default function CompaniesPage() {
   const [secType, setSecType] = useState("");
   const [hasNsdl, setHasNsdl] = useState<string>("");
   const [hasCdsl, setHasCdsl] = useState<string>("");
+  const [colFilters, setColFilters] = useState<ColFilters>({});
   const [skip, setSkip] = useState(0);
   const limit = 50;
+
+  const setCol = (key: string, val: string) => { setColFilters((p) => ({ ...p, [key]: val })); setSkip(0); };
+  const colF = (key: string, label: string, kind: "text" | "bool" = "text") => (
+    <ColumnFilter label={label} value={colFilters[key] ?? ""} onChange={(v) => setCol(key, v)} kind={kind} />
+  );
 
   const [showCreate, setShowCreate] = useState(false);
   const [ingesting, setIngesting] = useState(false);
@@ -32,6 +40,7 @@ export default function CompaniesPage() {
     ...(secType ? { security_type: secType } : {}),
     ...(hasNsdl !== "" ? { has_nsdl: hasNsdl === "true" } : {}),
     ...(hasCdsl !== "" ? { has_cdsl: hasCdsl === "true" } : {}),
+    ...(filtersToParam(colFilters) ? { filters: filtersToParam(colFilters) } : {}),
     skip,
     limit,
   });
@@ -52,7 +61,8 @@ export default function CompaniesPage() {
     }
   };
 
-  useEffect(() => { load(); }, [search, secType, hasNsdl, hasCdsl, skip]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [search, secType, hasNsdl, hasCdsl, JSON.stringify(colFilters), skip]);
 
   const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,6 +87,8 @@ export default function CompaniesPage() {
     if (secType) p.security_type = secType;
     if (hasNsdl !== "") p.has_nsdl = hasNsdl;
     if (hasCdsl !== "") p.has_cdsl = hasCdsl;
+    const fp = filtersToParam(colFilters);
+    if (fp) p.filters = fp;
     const url = api.companies.exportUrl(p);
     const a = document.createElement("a");
     a.href = `${url}&_token=${localStorage.getItem("access_token")}`;
@@ -92,8 +104,8 @@ export default function CompaniesPage() {
       .catch(() => push("error", "Export failed"));
   };
 
-  const clearFilters = () => { setSearch(""); setSecType(""); setHasNsdl(""); setHasCdsl(""); setSkip(0); };
-  const hasFilters = search || secType || hasNsdl !== "" || hasCdsl !== "";
+  const clearFilters = () => { setSearch(""); setSecType(""); setHasNsdl(""); setHasCdsl(""); setColFilters({}); setSkip(0); };
+  const hasFilters = search || secType || hasNsdl !== "" || hasCdsl !== "" || activeFilterCount(colFilters) > 0;
 
   const totalPages = Math.ceil(total / limit);
   const page = Math.floor(skip / limit);
@@ -191,15 +203,15 @@ export default function CompaniesPage() {
           <table>
             <thead>
               <tr>
-                <th>Company Name</th>
-                <th>ISIN / ARN</th>
-                <th>NSDL RTA</th>
-                <th>CDSL RTA</th>
-                <th>Security Type</th>
-                <th style={{ textAlign: "right" }}>Total Shares</th>
-                <th>NSDL</th>
-                <th>CDSL</th>
-                <th>Updated</th>
+                <th>Company Name{colF("company_name", "Company Name")}</th>
+                <th>ISIN / ARN{colF("isin_arn", "ISIN / ARN")}</th>
+                <th>NSDL RTA{colF("nsdl_rta_code", "NSDL RTA")}</th>
+                <th>CDSL RTA{colF("cdsl_rta_code", "CDSL RTA")}</th>
+                <th>Security Type{colF("security_type", "Security Type")}</th>
+                <th style={{ textAlign: "right" }}>Total Shares{colF("total_shares", "Total Shares")}</th>
+                <th>NSDL{colF("has_nsdl_shares", "NSDL Shares", "bool")}</th>
+                <th>CDSL{colF("has_cdsl_shares", "CDSL Shares", "bool")}</th>
+                <th>Updated{colF("updated_at", "Updated")}</th>
               </tr>
             </thead>
             <tbody>

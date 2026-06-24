@@ -56,10 +56,14 @@ def party_key(c: Company) -> str | None:
 async def list_parties_page(
     db: AsyncSession,
     search: str | None = None,
+    col_filters: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> tuple[list[dict], int]:
     """Paginated party list using SQL grouping — avoids loading all companies."""
+    from sqlalchemy import String, cast
+    from app.utils.filters import parse_filters
+
     party_key_expr = sql_func.coalesce(Company.nsdl_rta_code, Company.cdsl_rta_code)
     base_where = or_(Company.nsdl_rta_code.isnot(None), Company.cdsl_rta_code.isnot(None))
     filters = [base_where]
@@ -73,6 +77,20 @@ async def list_parties_page(
                     Company.cdsl_rta_code.ilike(f"%{s}%"),
                 )
             )
+    # Excel-style per-column filters (company-level text columns only — the money
+    # aggregates are computed after pagination, so they are not filterable here).
+    _party_filter_cols = {
+        "company_name": [Company.company_name],
+        "rta_code": [Company.nsdl_rta_code, Company.cdsl_rta_code],
+    }
+    for item in parse_filters(col_filters):
+        if not isinstance(item, dict):
+            continue
+        cols = _party_filter_cols.get(item.get("col"))
+        val = item.get("val")
+        if cols and val is not None and str(val).strip():
+            term = f"%{str(val).strip()}%"
+            filters.append(or_(*[cast(c, String).ilike(term) for c in cols]))
 
     total = int((await db.execute(
         select(sql_func.count(sql_func.distinct(party_key_expr))).where(*filters)

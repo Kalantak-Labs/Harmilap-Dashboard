@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/Toast";
 import type { BeneficiaryListItem, ZipIngestResult } from "@/lib/types";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { filtersToParam, activeFilterCount, type ColFilters } from "@/lib/filters";
 
 const BENEF_TYPE: Record<number, string> = {
   1: "Resident", 2: "FI", 3: "FII", 4: "NRI", 5: "Body Corporate",
@@ -25,8 +27,14 @@ export default function BeneficiariesPage() {
   const [loading, setLoading] = useState(true);
   const [isin, setIsin] = useState(searchParams.get("isin") ?? "");
   const [search, setSearch] = useState("");
+  const [colFilters, setColFilters] = useState<ColFilters>({});
   const [skip, setSkip] = useState(0);
   const limit = 50;
+
+  const setCol = (key: string, val: string) => { setColFilters((p) => ({ ...p, [key]: val })); setSkip(0); };
+  const colF = (key: string, label: string, kind: "text" | "bool" = "text") => (
+    <ColumnFilter label={label} value={colFilters[key] ?? ""} onChange={(v) => setCol(key, v)} kind={kind} />
+  );
 
   const [ingesting, setIngesting] = useState(false);
   const [ingestResult, setIngestResult] = useState<ZipIngestResult | null>(null);
@@ -38,6 +46,7 @@ export default function BeneficiariesPage() {
   const params = () => ({
     ...(isin ? { isin_code: isin } : {}),
     ...(search ? { search } : {}),
+    ...(filtersToParam(colFilters) ? { filters: filtersToParam(colFilters) } : {}),
     skip,
     limit,
   });
@@ -59,7 +68,8 @@ export default function BeneficiariesPage() {
     }
   };
 
-  useEffect(() => { load(); }, [isin, search, skip]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [isin, search, JSON.stringify(colFilters), skip]);
 
   const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -99,6 +109,8 @@ export default function BeneficiariesPage() {
     const p: Record<string, string> = {};
     if (isin) p.isin_code = isin;
     if (search) p.search = search;
+    const fp = filtersToParam(colFilters);
+    if (fp) p.filters = fp;
     const url = api.beneficiaries.exportUrl(p);
     fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } })
       .then((r) => r.blob())
@@ -233,8 +245,8 @@ export default function BeneficiariesPage() {
           value={isin}
           onChange={(e) => { setIsin(e.target.value.toUpperCase()); setSkip(0); }}
         />
-        {(search || isin) && (
-          <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(""); setIsin(""); setSkip(0); }}><X size={13} /> Clear</button>
+        {(search || isin || activeFilterCount(colFilters) > 0) && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(""); setIsin(""); setColFilters({}); setSkip(0); }}><X size={13} /> Clear</button>
         )}
         <button className="btn btn-ghost btn-sm btn-icon" onClick={load}><RefreshCw size={14} /></button>
       </div>
@@ -245,17 +257,17 @@ export default function BeneficiariesPage() {
           <table>
             <thead>
               <tr>
-                <th>Holder Name</th>
-                <th>ISIN</th>
-                <th>Depository</th>
-                <th>DP ID</th>
-                <th>Client ID</th>
-                <th>PAN</th>
-                <th>Type</th>
-                <th style={{ textAlign: "right" }}>Free</th>
-                <th style={{ textAlign: "right" }}>Lock-in</th>
-                <th style={{ textAlign: "right" }}>Pledged</th>
-                <th>Record Date</th>
+                <th>Holder Name{colF("first_holder_name", "Holder Name")}</th>
+                <th>ISIN{colF("isin_code", "ISIN")}</th>
+                <th>Depository{colF("depository", "Depository")}</th>
+                <th>DP ID{colF("dp_id", "DP ID")}</th>
+                <th>Client ID{colF("client_id", "Client ID")}</th>
+                <th>PAN{colF("first_holder_pan", "PAN")}</th>
+                <th>Type{colF("beneficiary_type", "Type")}</th>
+                <th style={{ textAlign: "right" }}>Free{colF("free_positions", "Free")}</th>
+                <th style={{ textAlign: "right" }}>Lock-in{colF("lockin_positions", "Lock-in")}</th>
+                <th style={{ textAlign: "right" }}>Pledged{colF("pledged_positions", "Pledged")}</th>
+                <th>Record Date{colF("record_date", "Record Date")}</th>
               </tr>
             </thead>
             <tbody>

@@ -68,11 +68,14 @@ def _stream_pdf(data: bytes, filename: str) -> StreamingResponse:
 
 @router.get("/export")
 async def export_invoices(
+    filters: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_permission("can_download")),
 ):
+    from sqlalchemy import String, cast
     from app.models.company import Company
     from app.services.invoice_excel import build_billing_invoices_export
+    from app.utils.filters import parse_filters
     companies = (await db.execute(select(Company.nsdl_rta_code, Company.cdsl_rta_code, Company.company_name))).all()
     name_by_code: dict[str, str] = {}
     for nsdl, cdsl, name in companies:
@@ -80,9 +83,42 @@ async def export_invoices(
             name_by_code[nsdl] = name
         if name and cdsl and cdsl not in name_by_code:
             name_by_code[cdsl] = name
+
+    # Mirror the parties-table column filters: keep only invoices whose RTA code
+    # belongs to a company matching the company-level text filters.
+    allowed_codes: set[str] | None = None
+    party_cols = {
+        "company_name": [Company.company_name],
+        "rta_code": [Company.nsdl_rta_code, Company.cdsl_rta_code],
+    }
+    fconds = []
+    for item in parse_filters(filters):
+        if not isinstance(item, dict):
+            continue
+        cols = party_cols.get(item.get("col"))
+        val = item.get("val")
+        if cols and val is not None and str(val).strip():
+            term = f"%{str(val).strip()}%"
+            fconds.append(or_(*[cast(c, String).ilike(term) for c in cols]))
+    if fconds:
+        matched = (await db.execute(
+            select(Company.nsdl_rta_code, Company.cdsl_rta_code).where(*fconds)
+        )).all()
+        allowed_codes = set()
+        for nsdl, cdsl in matched:
+            if nsdl:
+                allowed_codes.add(nsdl)
+            if cdsl:
+                allowed_codes.add(cdsl)
+
     invoices = (await db.execute(
         select(BillingInvoice).order_by(BillingInvoice.generated_at.desc())
     )).scalars().all()
+    if allowed_codes is not None:
+        invoices = [
+            inv for inv in invoices
+            if inv.nsdl_rta_code in allowed_codes or inv.cdsl_rta_code in allowed_codes
+        ]
     rows = []
     for inv in invoices:
         rows.append({
@@ -152,6 +188,7 @@ async def update_billing_config(
 @router.get("/parties", response_model=PartyBillingListResponse)
 async def list_billing_parties(
     search: str | None = Query(None),
+    filters: str | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -160,6 +197,7 @@ async def list_billing_parties(
     page, total = await list_parties_page(
         db,
         search=search.strip() if search else None,
+        col_filters=filters,
         skip=skip,
         limit=limit,
     )

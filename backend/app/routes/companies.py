@@ -19,6 +19,7 @@ from app.schemas.company import (
     validate_company_write_required,
 )
 from app.reference_data import GST_STATE_CODES, PAN_HOLDER_TYPES, security_type_from_isin
+from app.utils.filters import apply_column_filters
 from app.services.excel import parse_excel, build_export_excel
 from app.services.action_log import log_action, model_to_log_dict, diff_fields, company_label, COMPANY_AUDIT_IGNORE
 from app.dependencies import get_current_user, require_permission
@@ -76,12 +77,27 @@ def _apply_search(query, search: str | None):
     )
 
 
+# Whitelisted per-column filters (Excel-style header filters)
+COMPANY_FILTERS = {
+    "company_name": ("text", [Company.company_name]),
+    "isin_arn": ("text", [Company.isin_code, Company.arn_number]),
+    "nsdl_rta_code": ("text", [Company.nsdl_rta_code]),
+    "cdsl_rta_code": ("text", [Company.cdsl_rta_code]),
+    "security_type": ("text", [Company.security_type]),
+    "total_shares": ("text", [Company.total_shares]),
+    "has_nsdl_shares": ("bool", [Company.has_nsdl_shares]),
+    "has_cdsl_shares": ("bool", [Company.has_cdsl_shares]),
+    "updated_at": ("text", [Company.updated_at]),
+}
+
+
 @router.get("/", response_model=list[CompanyListOut])
 async def list_companies(
     search: str | None = Query(None),
     security_type: str | None = Query(None),
     has_nsdl: bool | None = Query(None),
     has_cdsl: bool | None = Query(None),
+    filters: str | None = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     current_user: User = Depends(require_permission("viewer")),
@@ -95,6 +111,7 @@ async def list_companies(
         query = query.where(Company.has_nsdl_shares == has_nsdl)
     if has_cdsl is not None:
         query = query.where(Company.has_cdsl_shares == has_cdsl)
+    query = apply_column_filters(query, filters, COMPANY_FILTERS)
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
@@ -106,6 +123,7 @@ async def count_companies(
     security_type: str | None = Query(None),
     has_nsdl: bool | None = Query(None),
     has_cdsl: bool | None = Query(None),
+    filters: str | None = Query(None),
     current_user: User = Depends(require_permission("viewer")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -128,6 +146,7 @@ async def count_companies(
         query = query.where(Company.has_nsdl_shares == has_nsdl)
     if has_cdsl is not None:
         query = query.where(Company.has_cdsl_shares == has_cdsl)
+    query = apply_column_filters(query, filters, COMPANY_FILTERS)
     result = await db.execute(query)
     return {"count": result.scalar()}
 
@@ -139,6 +158,7 @@ async def export_companies(
     security_type: str | None = Query(None),
     has_nsdl: bool | None = Query(None),
     has_cdsl: bool | None = Query(None),
+    filters: str | None = Query(None),
     current_user: User = Depends(require_permission("can_download")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -150,6 +170,7 @@ async def export_companies(
         query = query.where(Company.has_nsdl_shares == has_nsdl)
     if has_cdsl is not None:
         query = query.where(Company.has_cdsl_shares == has_cdsl)
+    query = apply_column_filters(query, filters, COMPANY_FILTERS)
 
     result = await db.execute(query)
     companies = result.scalars().all()
