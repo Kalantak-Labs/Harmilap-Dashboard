@@ -18,7 +18,8 @@ class PanHolderType(Base):
 
 
 class IsinSecurityType(Base):
-    """ISIN digits 8–9 → security type (seeded reference table)."""
+    """(ISIN issuer prefix, security code) → security type (seeded reference table)."""
     __tablename__ = "isin_security_types"
-    code = Column(String(2), primary_key=True)
+    issuer_prefix = Column(String(3), primary_key=True)  # INE / IN9 / INF
+    code = Column(String(2), primary_key=True)           # security type code (chars 8–9)
     security_type = Column(String(200), nullable=False)

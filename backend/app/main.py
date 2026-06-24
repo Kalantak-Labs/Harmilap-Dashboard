@@ -51,12 +51,20 @@ async def lifespan(app: FastAPI):
             f"INSERT INTO pan_holder_types (code, meaning) VALUES {pan_vals} "
             "ON CONFLICT (code) DO UPDATE SET meaning = EXCLUDED.meaning"
         ))
+        # isin_security_types is now keyed by (issuer_prefix, code) — rebuild + reseed
+        await conn.execute(text("DROP TABLE IF EXISTS isin_security_types"))
+        await conn.execute(text(
+            "CREATE TABLE isin_security_types ("
+            "issuer_prefix VARCHAR(3) NOT NULL, code VARCHAR(2) NOT NULL, "
+            "security_type VARCHAR(200) NOT NULL, PRIMARY KEY (issuer_prefix, code))"
+        ))
         isin_sec_vals = ",".join(
-            f"('{k}','{v.replace(chr(39), chr(39) * 2)}')" for k, v in ISIN_SECURITY_TYPES.items()
+            f"('{pfx}','{code}','{v.replace(chr(39), chr(39) * 2)}')"
+            for (pfx, code), v in ISIN_SECURITY_TYPES.items()
         )
         await conn.execute(text(
-            f"INSERT INTO isin_security_types (code, security_type) VALUES {isin_sec_vals} "
-            "ON CONFLICT (code) DO UPDATE SET security_type = EXCLUDED.security_type"
+            f"INSERT INTO isin_security_types (issuer_prefix, code, security_type) VALUES {isin_sec_vals} "
+            "ON CONFLICT (issuer_prefix, code) DO UPDATE SET security_type = EXCLUDED.security_type"
         ))
 
         # Clear bad values so the read-side validators never reject stored data
@@ -101,7 +109,8 @@ async def lifespan(app: FastAPI):
         await conn.execute(text(
             "UPDATE companies SET security_type = ("
             "SELECT security_type FROM isin_security_types i "
-            "WHERE i.code = substr(upper(trim(isin_code)), 8, 2)"
+            "WHERE i.issuer_prefix = substr(upper(trim(isin_code)), 1, 3) "
+            "  AND i.code = substr(upper(trim(isin_code)), 8, 2)"
             ") WHERE isin_code IS NOT NULL AND char_length(trim(isin_code)) >= 9"
         ))
 
