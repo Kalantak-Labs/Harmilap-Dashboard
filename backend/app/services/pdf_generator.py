@@ -854,17 +854,32 @@ def generate_invoice_pdf(
     story.append(billrow)
     story.append(SP(4))
 
-    # No. of ISINs — total active vs. actually billed
+    # No. of ISINs — total active vs. actually billed (year-wise when applicable)
     isins = [i for i in (company.get("isins") or []) if i]
     total_isins = company.get("isin_total") or company.get("isin_units") or len(isins) or 1
     billed_isins = company.get("isin_billed") or total_isins
+    year_breakdown = company.get("year_breakdown") or []
     s_isn = _s("isn", "Helvetica-Bold", 9, 12)
-    story.append(P(
-        f"<b>Total Active ISINs:</b> &nbsp;{total_isins}"
-        f"&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-        f"<b>ISINs Billed:</b> &nbsp;{billed_isins}",
-        s_isn,
-    ))
+    if year_breakdown:
+        parts = [f"FY {y.get('fiscal_year')}: {y.get('isin_count')}" for y in year_breakdown]
+        story.append(P(
+            f"<b>Total Active ISINs:</b> &nbsp;{total_isins}"
+            f"&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+            f"<b>ISINs Pending / Billed:</b> &nbsp;{billed_isins}",
+            s_isn,
+        ))
+        story.append(SP(2))
+        story.append(P(
+            "<b>Pending by Financial Year:</b> &nbsp;" + " &nbsp;·&nbsp; ".join(parts),
+            _s("isny", size=9, leading=12),
+        ))
+    else:
+        story.append(P(
+            f"<b>Total Active ISINs:</b> &nbsp;{total_isins}"
+            f"&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+            f"<b>ISINs Billed:</b> &nbsp;{billed_isins}",
+            s_isn,
+        ))
     story.append(SP(4))
 
     # ── 5. Services table (single, with Taxability column) ─────────────────────

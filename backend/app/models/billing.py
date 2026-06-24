@@ -51,6 +51,8 @@ class BillingInvoice(Base):
     # Total active ISIN units, and the number actually billed (multiplier)
     isin_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     billed_isin_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Year-wise pending ISINs: [{"fiscal_year": "2025-26", "isin_count": 5}, ...]
+    year_breakdown: Mapped[list | None] = mapped_column(JSON, nullable=True)
     is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     s3_key: Mapped[str] = mapped_column(String(512), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -148,3 +148,45 @@ def parse_invoice_excel(file_bytes: bytes, particular_names: list[str]) -> tuple
         })
 
     return rows, errors
+
+
+def build_billing_invoices_export(rows: list[dict]) -> bytes:
+    """All billing invoices, one row each, with year-wise pending breakdown."""
+    headers = [
+        "Invoice No", "Company", "NSDL RTA", "CDSL RTA", "Invoice Date", "Financial Year",
+        "Total Active ISINs", "Billed ISINs", "Year-wise Pending", "Grand Total (Rs.)",
+        "Type", "Generated On",
+    ]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Invoices"
+    header_fill = PatternFill("solid", fgColor="1a1a1a")
+    header_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=ci, value=h)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(ci)].width = max(len(h) + 4, 16)
+    ws.row_dimensions[1].height = 22
+
+    for ri, r in enumerate(rows, 2):
+        yb = r.get("year_breakdown") or []
+        yb_text = ", ".join(f"FY {y.get('fiscal_year')}: {y.get('isin_count')}" for y in yb)
+        gen = r.get("generated_at")
+        idt = r.get("invoice_date")
+        vals = [
+            r.get("invoice_no"), r.get("company_name"), r.get("nsdl_rta_code"),
+            r.get("cdsl_rta_code"),
+            idt.strftime("%d.%m.%Y") if hasattr(idt, "strftime") else idt,
+            r.get("fiscal_year"), r.get("isin_total"), r.get("billed_isin_count"),
+            yb_text, r.get("grand_total"),
+            "Manual" if r.get("is_manual") else "Generated",
+            gen.strftime("%d.%m.%Y %H:%M") if hasattr(gen, "strftime") else gen,
+        ]
+        for ci, v in enumerate(vals, 1):
+            ws.cell(row=ri, column=ci, value=v)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

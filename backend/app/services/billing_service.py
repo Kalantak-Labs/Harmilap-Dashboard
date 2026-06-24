@@ -371,7 +371,44 @@ def effective_billed(party: dict, billed: int | None) -> int:
     return total
 
 
-def company_dict_for_pdf(party: dict, billed: int | None = None) -> dict:
+def build_year_line_items(particulars: list[dict], year_isins: list[dict]) -> list[dict]:
+    """Expand taxable particulars into one line per (financial year, ISIN count);
+    non-taxable particulars are added once. Amounts are pre-scaled by each year's count."""
+    taxable = [p for p in particulars if p.get("enabled", True) and not p.get("non_taxable")]
+    nontax = [p for p in particulars if p.get("enabled", True) and p.get("non_taxable")]
+    lines: list[dict] = []
+    nid = 1
+    for entry in year_isins or []:
+        yr = str(entry.get("fiscal_year") or "").strip()
+        cnt = int(entry.get("isin_count") or 0)
+        if cnt <= 0 or not yr:
+            continue
+        for p in taxable:
+            base = (p.get("description") or "")
+            had_fy = "{fy}" in base or "{prev_fy}" in base or "{prev2_fy}" in base
+            base = base.replace("{fy}", yr).replace("{prev_fy}", yr).replace("{prev2_fy}", yr)
+            suffix = f" ({cnt} Active ISIN{'s' if cnt != 1 else ''})" if had_fy \
+                else f" — FY {yr} ({cnt} Active ISIN{'s' if cnt != 1 else ''})"
+            lines.append({
+                "id": nid,
+                "description": f"{base}{suffix}",
+                "sac_code": p.get("sac_code", "997159"),
+                "amount": float(p.get("amount") or 0) * cnt,
+                "is_red": p.get("is_red", False),
+                "non_taxable": False,
+                "enabled": True,
+            })
+            nid += 1
+    for p in nontax:
+        d = dict(p)
+        d["id"] = nid
+        nid += 1
+        lines.append(d)
+    return lines
+
+
+def company_dict_for_pdf(party: dict, billed: int | None = None,
+                         year_breakdown: list | None = None) -> dict:
     total = party.get("isin_units", 1)
     return {
         "company_name": party.get("company_name"),
@@ -389,6 +426,7 @@ def company_dict_for_pdf(party: dict, billed: int | None = None) -> dict:
         "isins": party.get("isins", []),
         "isin_total": total,
         "isin_billed": effective_billed(party, billed),
+        "year_breakdown": year_breakdown or None,
     }
 
 
@@ -399,13 +437,15 @@ def generate_pdf_bytes(
     invoice_no: str,
     invoice_date: date,
     billed: int | None = None,
+    pre_scaled: bool = False,
+    year_breakdown: list | None = None,
 ) -> bytes:
-    units = effective_billed(party, billed)
+    scale = 1 if pre_scaled else effective_billed(party, billed)
     line_items = []
     for p in particulars:
         d = dict(p)
-        if not d.get("non_taxable"):
-            d["amount"] = float(d.get("amount") or 0) * units
+        if not pre_scaled and not d.get("non_taxable"):
+            d["amount"] = float(d.get("amount") or 0) * scale
         line_items.append(d)
     config = {
         "line_items": line_items,
@@ -416,7 +456,7 @@ def generate_pdf_bytes(
         "bank_accounts": getattr(cfg, "bank_accounts", None) or [],
     }
     return generate_invoice_pdf(
-        company_dict_for_pdf(party, billed), config, invoice_no, invoice_date
+        company_dict_for_pdf(party, billed, year_breakdown), config, invoice_no, invoice_date
     )
 
 

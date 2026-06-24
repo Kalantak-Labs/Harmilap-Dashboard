@@ -16,6 +16,12 @@ import type {
 const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const fmtDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fyOf = (iso: string) => {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  return d.getMonth() >= 3 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`;
+};
+type YearRow = { fiscal_year: string; isin_count: number | "" };
 
 function ParticularsEditor({
   particulars, isinCount, onChange,
@@ -97,7 +103,7 @@ export default function BillingsPage() {
 
   const [invoiceNo, setInvoiceNo] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
-  const [billedCount, setBilledCount] = useState<number | "">("");
+  const [yearRows, setYearRows] = useState<YearRow[]>([]);
   const [invoiceNoError, setInvoiceNoError] = useState<string | null>(null);
   const [defaultInvoiceNo, setDefaultInvoiceNo] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -188,7 +194,7 @@ export default function BillingsPage() {
     setInvoiceNo("");
     setInvoiceNoError(null);
     setDefaultInvoiceNo(null);
-    setBilledCount(party.isin_count || 1);
+    setYearRows([{ fiscal_year: fyOf(invoiceDate), isin_count: party.isin_count || 1 }]);
     setPayAmount("");
     setPayRef("");
     setManualNo("");
@@ -270,16 +276,27 @@ export default function BillingsPage() {
     return () => clearTimeout(t);
   }, [manualNo, manualDate, summaryParty, loadingSummary, validateManualNo]);
 
+  const setYearField = (i: number, patch: Partial<YearRow>) =>
+    setYearRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addYearRow = () =>
+    setYearRows((rows) => [...rows, { fiscal_year: "", isin_count: 1 }]);
+  const removeYearRow = (i: number) =>
+    setYearRows((rows) => rows.filter((_, j) => j !== i));
+
   const generateInvoice = async () => {
     if (!summaryParty || invoiceNoError) return;
     const trimmed = invoiceNo.trim();
     if (!trimmed) { push("error", "Invoice number is required"); return; }
+    const years = yearRows
+      .filter((r) => r.fiscal_year.trim() && r.isin_count !== "" && Number(r.isin_count) > 0)
+      .map((r) => ({ fiscal_year: r.fiscal_year.trim(), isin_count: Number(r.isin_count) }));
+    if (years.length === 0) { push("error", "Add at least one financial year with an ISIN count"); return; }
     setGenerating(true);
     try {
       await api.billings.generateInvoice(summaryParty.party_key, {
         invoice_no: trimmed,
         invoice_date: invoiceDate,
-        billed_isin_count: billedCount === "" ? undefined : Number(billedCount),
+        year_isins: years,
       });
       push("success", `Invoice ${trimmed} generated`);
       const data = await refreshSummary(summaryParty.party_key);
@@ -391,11 +408,20 @@ export default function BillingsPage() {
             Generate invoices, track payments, and manage billing per company
           </p>
         </div>
-        {can("editor") && (
-          <button className="btn btn-secondary" onClick={() => router.push("/dashboard/billings/template")}>
-            <Receipt size={14} /> Global Template
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          {can("can_download") && (
+            <button className="btn btn-secondary" onClick={async () => {
+              try { await api.billings.exportInvoices(); } catch (e: unknown) { push("error", e instanceof Error ? e.message : "Export failed"); }
+            }}>
+              <Download size={14} /> Export Invoices
+            </button>
+          )}
+          {can("editor") && (
+            <button className="btn btn-secondary" onClick={() => router.push("/dashboard/billings/template")}>
+              <Receipt size={14} /> Global Template
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card" style={{ padding: 14, marginBottom: 14 }}>
@@ -438,9 +464,9 @@ export default function BillingsPage() {
                     {p.cdsl_rta_code && <div>CDSL: {p.cdsl_rta_code}</div>}
                   </td>
                   <td>{p.isin_count}</td>
-                  <td>{inr(p.total_billed)}</td>
+                  <td><span style={{ fontWeight: 600, color: "#2563eb" }}>{inr(p.total_billed)}</span></td>
                   <td>
-                    <span style={{ fontWeight: 600, color: p.outstanding > 0 ? "var(--danger)" : "var(--success, #16a34a)" }}>
+                    <span style={{ fontWeight: 600, color: p.outstanding > 0 ? "#dc2626" : "#16a34a" }}>
                       {inr(p.outstanding)}
                     </span>
                   </td>
@@ -530,17 +556,17 @@ export default function BillingsPage() {
             ) : (
               <>
                 <div className="stat-grid" style={{ marginBottom: 20, gridTemplateColumns: "repeat(3, 1fr)" }}>
-                  <div className="stat-card">
+                  <div className="stat-card" style={{ borderLeft: "3px solid #2563eb" }}>
                     <div className="stat-card-label">Total Billed</div>
-                    <div className="stat-card-value">{inr(summary.total_billed)}</div>
+                    <div className="stat-card-value" style={{ color: "#2563eb" }}>{inr(summary.total_billed)}</div>
                   </div>
-                  <div className="stat-card">
+                  <div className="stat-card" style={{ borderLeft: "3px solid #16a34a" }}>
                     <div className="stat-card-label">Total Received</div>
-                    <div className="stat-card-value">{inr(summary.total_received)}</div>
+                    <div className="stat-card-value" style={{ color: "#16a34a" }}>{inr(summary.total_received)}</div>
                   </div>
-                  <div className="stat-card">
+                  <div className="stat-card" style={{ borderLeft: `3px solid ${summary.outstanding > 0 ? "#dc2626" : "#16a34a"}` }}>
                     <div className="stat-card-label">Outstanding</div>
-                    <div className="stat-card-value" style={{ color: summary.outstanding > 0 ? "var(--danger)" : undefined }}>
+                    <div className="stat-card-value" style={{ color: summary.outstanding > 0 ? "#dc2626" : "#16a34a" }}>
                       {inr(summary.outstanding)}
                     </div>
                   </div>
@@ -566,13 +592,25 @@ export default function BillingsPage() {
                         )}
                         {invoiceNoError && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{invoiceNoError}</div>}
                       </div>
-                      <div className="form-group">
-                        <label className="form-label">ISINs to bill</label>
-                        <input className="input" type="number" min={1} value={billedCount}
-                          onChange={(e) => setBilledCount(e.target.value === "" ? "" : Math.max(1, Number(e.target.value)))} />
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                          Total active ISIN units: <b>{summaryParty.isin_count}</b> — amount is multiplied by this
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <label className="form-label" style={{ margin: 0 }}>Year-wise pending ISINs</label>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Total active: <b>{summaryParty.isin_count}</b></span>
+                      </div>
+                      {yearRows.map((r, i) => (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 120px 32px", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                          <input className="input input-sm" placeholder="Financial year (e.g. 2025-26)" value={r.fiscal_year}
+                            onChange={(e) => setYearField(i, { fiscal_year: e.target.value })} />
+                          <input className="input input-sm" type="number" min={1} placeholder="ISINs" value={r.isin_count}
+                            onChange={(e) => setYearField(i, { isin_count: e.target.value === "" ? "" : Math.max(1, Number(e.target.value)) })} />
+                          <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={yearRows.length === 1}
+                            onClick={() => removeYearRow(i)} style={{ color: "var(--danger)" }}><Trash2 size={12} /></button>
                         </div>
+                      ))}
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={addYearRow}><Plus size={12} /> Add year</button>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                        One invoice covers all years; each year&apos;s amount = per-ISIN charge × its ISIN count.
                       </div>
                     </div>
                     <button className="btn btn-primary" onClick={generateInvoice}

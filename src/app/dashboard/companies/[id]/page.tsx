@@ -22,10 +22,10 @@ type EditState = Partial<Company> & {
   physical_shares?: string | number | null;
 };
 
-const Field = ({ label, value, required }: { label: string; value: React.ReactNode; required?: boolean }) => (
+const Field = ({ label, value, required, caps = true }: { label: string; value: React.ReactNode; required?: boolean; caps?: boolean }) => (
   <>
     <div className={`detail-label${required ? " required" : ""}`}>{label}</div>
-    <div className="detail-value">{value ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
+    <div className="detail-value" style={caps ? { textTransform: "uppercase" } : undefined}>{value ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</div>
   </>
 );
 
@@ -229,7 +229,7 @@ export default function CompanyDetailPage() {
         {/* Section: Contact */}
         <div className="detail-grid" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="detail-section-title">Contact</div>
-          <Field label="Email IDs" required={editing} value={editing
+          <Field label="Email IDs" required={editing} caps={false} value={editing
             ? <ArrayFieldEditor values={(form.email_ids as string[]) ?? []} onChange={(v) => set("email_ids", v)} placeholder="email@example.com" inputType="email" />
             : company.email_ids?.length
               ? <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{company.email_ids.map((e, i) => <span key={i}>{e}</span>)}</div>

@@ -360,11 +360,21 @@ export const api = {
       if (invoiceDate) qs.set("invoice_date", invoiceDate);
       return request<{ available: boolean; default_invoice_no: string | null }>(`/billings/check-invoice-no?${qs}`);
     },
-    generateInvoice: (partyKey: string, body: { invoice_no: string; invoice_date: string; billed_isin_count?: number }) =>
+    generateInvoice: (partyKey: string, body: { invoice_no: string; invoice_date: string; billed_isin_count?: number; year_isins?: { fiscal_year: string; isin_count: number }[] }) =>
       request<import("./types").BillingInvoiceRecord>(
         `/billings/parties/${encodeURIComponent(partyKey)}/invoices`,
         { method: "POST", body: JSON.stringify(body) },
       ),
+    exportInvoices: async () => {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`${BASE}/billings/export`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "Invoices.xlsx";
+      a.click();
+    },
     addManualInvoice: async (partyKey: string, data: {
       invoice_no: string;
       invoice_date: string;

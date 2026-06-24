@@ -376,6 +376,7 @@ export interface BillingInvoiceRecord {
   grand_total: number;
   isin_total: number | null;
   billed_isin_count: number | null;
+  year_breakdown: { fiscal_year: string; isin_count: number }[] | null;
   filename: string;
   generated_at: string;
   is_manual: boolean;

@@ -142,6 +142,9 @@ async def lifespan(app: FastAPI):
         await conn.execute(text(
             "ALTER TABLE billing_invoices ADD COLUMN IF NOT EXISTS billed_isin_count INTEGER"
         ))
+        await conn.execute(text(
+            "ALTER TABLE billing_invoices ADD COLUMN IF NOT EXISTS year_breakdown JSON"
+        ))
 
         # ── Referential integrity: beneficiaries / benpos_lockin → companies ──
         for _tbl in ("beneficiaries", "benpos_lockin"):

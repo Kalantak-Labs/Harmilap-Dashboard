@@ -66,6 +66,47 @@ def _stream_pdf(data: bytes, filename: str) -> StreamingResponse:
     )
 
 
+@router.get("/export")
+async def export_invoices(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_permission("can_download")),
+):
+    from app.models.company import Company
+    from app.services.invoice_excel import build_billing_invoices_export
+    companies = (await db.execute(select(Company.nsdl_rta_code, Company.cdsl_rta_code, Company.company_name))).all()
+    name_by_code: dict[str, str] = {}
+    for nsdl, cdsl, name in companies:
+        if name and nsdl and nsdl not in name_by_code:
+            name_by_code[nsdl] = name
+        if name and cdsl and cdsl not in name_by_code:
+            name_by_code[cdsl] = name
+    invoices = (await db.execute(
+        select(BillingInvoice).order_by(BillingInvoice.generated_at.desc())
+    )).scalars().all()
+    rows = []
+    for inv in invoices:
+        rows.append({
+            "invoice_no": inv.invoice_no,
+            "company_name": name_by_code.get(inv.nsdl_rta_code) or name_by_code.get(inv.cdsl_rta_code),
+            "nsdl_rta_code": inv.nsdl_rta_code,
+            "cdsl_rta_code": inv.cdsl_rta_code,
+            "invoice_date": inv.invoice_date,
+            "fiscal_year": inv.fiscal_year,
+            "isin_total": inv.isin_total,
+            "billed_isin_count": inv.billed_isin_count,
+            "year_breakdown": inv.year_breakdown,
+            "grand_total": inv.grand_total,
+            "is_manual": inv.is_manual,
+            "generated_at": inv.generated_at,
+        })
+    data = build_billing_invoices_export(rows)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Invoices.xlsx"'},
+    )
+
+
 @router.get("/config", response_model=BillingConfigOut)
 async def get_billing_config(
     db: AsyncSession = Depends(get_db),
@@ -279,14 +320,30 @@ async def generate_invoice(
         raise HTTPException(400, "At least one billing particular must be enabled")
 
     from app.services.pdf_generator import current_fy
-    from app.services.billing_service import effective_billed
+    from app.services.billing_service import effective_billed, build_year_line_items
     fy = current_fy(body.invoice_date)
     total_units = party.get("isin_units", 1)
-    billed = effective_billed(party, body.billed_isin_count)
-    total = grand_total(
-        particulars, cfg.gst_type, cfg.igst_rate, cfg.cgst_rate, cfg.sgst_rate,
-        billed,
-    )
+
+    year_breakdown = None
+    if body.year_isins:
+        year_breakdown = [
+            {"fiscal_year": str(y.fiscal_year).strip(), "isin_count": int(y.isin_count)}
+            for y in body.year_isins if y.isin_count and y.isin_count > 0 and str(y.fiscal_year).strip()
+        ]
+    if year_breakdown:
+        # Year-wise: one taxable line per (year, count); amounts pre-scaled.
+        pdf_particulars = build_year_line_items(particulars, year_breakdown)
+        billed = sum(y["isin_count"] for y in year_breakdown)
+        total = grand_total(
+            pdf_particulars, cfg.gst_type, cfg.igst_rate, cfg.cgst_rate, cfg.sgst_rate, 1,
+        )
+    else:
+        pdf_particulars = particulars
+        billed = effective_billed(party, body.billed_isin_count)
+        total = grand_total(
+            particulars, cfg.gst_type, cfg.igst_rate, cfg.cgst_rate, cfg.sgst_rate, billed,
+        )
+
     label = party.get("company_name") or party_key
     filename = f"Invoice_{label}_{invoice_no.replace('/', '-')}.pdf"
 
@@ -296,7 +353,7 @@ async def generate_invoice(
         invoice_no=invoice_no,
         invoice_date=body.invoice_date,
         fiscal_year=fy,
-        particulars=particulars,
+        particulars=pdf_particulars,
         gst_type=cfg.gst_type,
         igst_rate=cfg.igst_rate,
         cgst_rate=cfg.cgst_rate,
@@ -304,6 +361,7 @@ async def generate_invoice(
         grand_total=total,
         isin_total=total_units,
         billed_isin_count=billed,
+        year_breakdown=year_breakdown,
         is_manual=False,
         s3_key="pending",
         filename=filename,
@@ -312,7 +370,10 @@ async def generate_invoice(
     db.add(inv)
     await db.flush()
 
-    pdf = generate_pdf_bytes(party, cfg, particulars, invoice_no, body.invoice_date, billed)
+    pdf = generate_pdf_bytes(
+        party, cfg, pdf_particulars, invoice_no, body.invoice_date,
+        billed=billed, pre_scaled=bool(year_breakdown), year_breakdown=year_breakdown,
+    )
     key = invoice_s3_key(str(inv.id), filename)
     try:
         upload_pdf(key, pdf)

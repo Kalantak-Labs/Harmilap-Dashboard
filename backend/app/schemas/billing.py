@@ -65,6 +65,7 @@ class BillingInvoiceOut(BaseModel):
     grand_total: float
     isin_total: int | None = None
     billed_isin_count: int | None = None
+    year_breakdown: list | None = None
     filename: str
     generated_at: datetime
     is_manual: bool = False
@@ -96,10 +97,16 @@ class PartySummaryOut(BaseModel):
     payments: list[BillingPaymentOut] = []
 
 
+class YearIsins(BaseModel):
+    fiscal_year: str
+    isin_count: int
+
+
 class GenerateInvoiceBody(BaseModel):
     invoice_no: str
     invoice_date: date
     billed_isin_count: int | None = None  # ISINs to bill; defaults to all active
+    year_isins: list[YearIsins] | None = None  # per-financial-year ISIN counts (single invoice)
 
 
 class InvoiceNoCheck(BaseModel):
